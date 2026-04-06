@@ -1,0 +1,141 @@
+# Getting Started — {{ vault_name }}
+
+Welcome, {{ owner_name }}. This is your personal intelligence vault, scaffolded by the `personal-intelligence-kit` template.
+
+## What just happened?
+
+Copier generated a vault with:
+- `CLAUDE.md` — the system prompt that turns Claude Code into your personal intelligence agent
+- `vault.toml` — runtime config (edit this to change sources/paths later)
+- `.env` — secrets (gitignored; fill in as needed)
+- `.claude/skills/` — the skills that do the actual work
+- `output/`, `working/`, `logs/`, `data/` — your working directories
+
+## First Steps
+
+### 1. Verify the vault opens in Claude Code
+
+```bash
+cd {{ vault_name | lower | replace(' ', '-') }}
+claude
+```
+
+Then try:
+```
+Read vault.toml and tell me which data sources are enabled.
+```
+
+Claude should answer based on your config.
+
+### 2. Fill in secrets
+
+Open `.env` and fill in values you need:
+
+- `ANTHROPIC_API_KEY` — required for LLM-powered skills (weekly-reflection, etc.)
+{%- if enable_contacts_mcp %}
+- `CLAY_API_KEY` — for Clay.earth contacts MCP
+{%- endif %}
+{%- if enable_tasks and task_provider == 'todoist' %}
+- `TODOIST_API_TOKEN` — from https://todoist.com/app/settings/integrations/developer
+{%- endif %}
+
+### 3. Set up each enabled data source
+
+{% if enable_email -%}
+#### Email
+
+See `.claude/skills/email-ingest/SETUP.md` for the full walkthrough. In summary:
+
+```bash
+brew install isync notmuch   # macOS
+# Configure ~/.mbsyncrc (template in SETUP.md)
+# notmuch setup
+mbsync -a && notmuch new
+```
+
+Limits initial sync to 1000 messages (you can increase later).
+{%- endif %}
+
+{% if enable_browser -%}
+#### Browser ({{ browser_type }})
+
+On macOS, grant Full Disk Access to your terminal:
+- System Settings → Privacy & Security → Full Disk Access
+- Add Terminal.app (or iTerm, etc.)
+
+Then:
+```bash
+uv run .claude/skills/browser-ingest/ingest.py
+```
+{%- endif %}
+
+{% if enable_journal -%}
+#### Journal ({{ journal_type }})
+
+{% if journal_type == 'rosebud' -%}
+1. Export from Rosebud: https://my.rosebud.app → Settings → Export to markdown
+2. Move the export to `{{ journal_path }}/`
+3. Run: `uv run .claude/skills/journal-ingest/ingest.py`
+{% elif journal_type == 'dayone' -%}
+1. In Day One: File → Export → JSON
+2. Unpack the zip into `{{ journal_path }}/`
+3. Run: `uv run .claude/skills/journal-ingest/ingest.py`
+{% else -%}
+Point `{{ journal_path }}` at a directory where each file is named `YYYY-MM-DD.md`, then run:
+```bash
+uv run .claude/skills/journal-ingest/ingest.py
+```
+{%- endif %}
+{%- endif %}
+
+{% if enable_tasks -%}
+#### Tasks ({{ task_provider }})
+
+See `.claude/skills/tasks-import/SKILL.md` for provider-specific setup.
+{%- endif %}
+
+### 4. Run your first sync
+
+```bash
+uv run --env-file .env .claude/skills/data-sync/sync_all.py --yes
+```
+
+This runs all enabled sync workers in parallel. The `--env-file .env` flag passes API tokens and secrets into the subprocess without needing to `source .env` first.
+
+{% if enable_scheduled_tasks -%}
+### 5. Install scheduled tasks (optional)
+
+```bash
+cp config/com.claude.daily-sync.plist ~/Library/LaunchAgents/
+cp config/com.claude.weekly-reflect.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.claude.daily-sync.plist
+launchctl load ~/Library/LaunchAgents/com.claude.weekly-reflect.plist
+```
+
+See `config/README.md` for details and Linux alternatives.
+{%- endif %}
+
+### 6. Try the weekly reflection
+
+Once you have some data:
+
+```bash
+uv run --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py
+# Then in Claude Code:
+# "Read working/scratch/weekly-reflection-input-YYYY-MM-DD.md and produce the reflection."
+```
+
+## What to Do Next
+
+- **Ask Claude questions** against your data: "What commitments did I make last week?", "What topics came up across journal and browser?"
+- **Customize `CLAUDE.md`** — delete anything that doesn't match how you work
+- **Add your own skills** — drop a directory into `.claude/skills/` with a `SKILL.md`
+- **Edit `vault.toml`** to enable/disable sources as your setup evolves
+
+## Getting Help
+
+- Template issues: see the `personal-intelligence-kit` repo README
+- Claude Code: `/help` inside Claude Code
+- Skills: each skill's `SKILL.md` explains what it does and how
+
+Good luck, {{ owner_name }}.

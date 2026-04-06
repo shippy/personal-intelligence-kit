@@ -1,0 +1,71 @@
+---
+name: stale-drafts
+description: Surface the most finishable drafts and rank them for writing sessions. Acts as intake funnel for draft-coach. Use for batch:stale-drafts or to review draft backlog.
+---
+
+# Stale Drafts Queue
+
+Surface {{ owner_name }}'s **most finishable drafts** and rank them for writing sessions. Acts as an intake funnel for `draft-coach` — pick a draft from the queue, then run draft-coach to finish it.
+
+## Invocation
+
+```bash
+cd .claude/skills/stale-drafts
+uv run --env-file ../../.env stale_drafts.py
+```
+
+Or from the vault root:
+```bash
+uv run --env-file .env .claude/skills/stale-drafts/stale_drafts.py
+```
+
+Or via Claude Code: `batch: stale-drafts`
+
+The `--env-file` flag passes `ANTHROPIC_API_KEY` from `.env` so the LLM assessment works. Without it, the skill falls back to heuristic-only ranking.
+
+## What It Does
+
+1. **Scans** all drafts at the notes vault's `drafts_path` (from `vault.toml`)
+2. **Filters** empty drafts (frontmatter only) — auto-classified as "drop"
+3. **Ranks** drafts by `freshness × word_count × recency` heuristic
+4. **Splits** into Finish Queue (worth completing) and Drop List (dead weight)
+5. **Cross-references** with `Posted/` subdirectory if present (to detect already-covered topics)
+6. **Outputs** terse alert + dense report
+7. **Notifies** via `terminal-notifier` (macOS)
+
+## Optional LLM Enhancement
+
+If `ANTHROPIC_API_KEY` is set, the skill can call Claude Sonnet for finishability assessment:
+- **high** — clear angle, one-sitting finish
+- **medium** — real idea, needs development
+- **low** — seed only, far from postable
+
+Without an API key, falls back to heuristic ranking only.
+
+## Outputs
+
+| Output | Location |
+|--------|----------|
+| Terse alert | `output/alerts/stale-drafts-YYYY-MM-DD.md` |
+| Dense report | `output/reports/stale-drafts-analysis-YYYY-MM-DD.md` |
+| Activity log | `logs/activity.md` (append) |
+| Notification | macOS notification with finishable count |
+
+## Requirements
+
+- Notes vault configured in `vault.toml` with a `drafts_path`
+- `ANTHROPIC_API_KEY` in `.env` (optional — enables LLM ranking)
+- `uv` installed (for inline script dependencies)
+
+## Workflow Details
+
+**Ranking formula (heuristic mode):**
+```
+score = (1 + log(word_count)) × freshness_decay(days_stale)
+```
+Where `freshness_decay` = `0.5 + 0.5 * exp(-days/180)` — keeps drafts relevant for ~6 months before heavy decay.
+
+**Drop rules:**
+- Empty draft (< 50 words) → drop
+- Stale > 365 days AND < 100 words → drop
+- Title matches recent Posted file → drop with "already posted" note

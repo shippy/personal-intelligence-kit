@@ -1,0 +1,62 @@
+---
+name: data-sync
+description: Orchestrate parallel synchronization of all enabled data sources. Reads vault.toml to determine which workers to run. Use for batch:data-sync or as a scheduled job.
+---
+
+# Data Sync Orchestrator
+
+Orchestrates parallel synchronization of all data sources enabled in `vault.toml`.
+
+## Invocation
+
+```bash
+uv run --env-file .env .claude/skills/data-sync/sync_all.py --yes
+uv run --env-file .env .claude/skills/data-sync/sync_all.py --skip email
+```
+
+Or via Claude Code: `batch: data-sync`
+
+The `--env-file .env` flag passes secrets (API tokens for task providers, etc.) into the subprocess.
+
+## What It Does
+
+For each enabled source in `vault.toml`, runs the corresponding sync worker in parallel:
+
+{% if enable_email -%}
+- **Email** — calls `mbsync` then `notmuch new`
+{% endif -%}
+{% if enable_browser -%}
+- **Browser** — delegates to `browser-ingest` skill
+{% endif -%}
+{% if enable_journal -%}
+- **Journal** — delegates to `journal-ingest` skill
+{% endif -%}
+{% if enable_tasks -%}
+- **Tasks** — delegates to `tasks-import` skill
+{% endif %}
+
+After all workers complete:
+1. Prints a summary (success/failure per worker, timing)
+2. Sends macOS notification via `terminal-notifier`
+3. Appends to `logs/activity.md`
+
+## Scheduling
+
+This skill is the entry point for scheduled syncs. See `config/com.claude.daily-sync.plist` for a launchd example (daily at 20:00).
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.claude.daily-sync.plist
+```
+
+## Error Handling
+
+- Each worker runs in its own subprocess — one failure doesn't kill others
+- Errors are logged to `logs/errors.md`
+- Exit code is non-zero if any worker failed
+
+## Philosophy
+
+Sync should be **cheap, fast, and idempotent**. Workers must handle:
+- Being interrupted (e.g. laptop sleep)
+- Re-running against already-synced data
+- Missing credentials (fail cleanly with helpful error)

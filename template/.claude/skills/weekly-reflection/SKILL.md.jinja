@@ -1,0 +1,112 @@
+---
+name: weekly-reflection
+description: Transform raw data from the past week into a qualitative narrative reflection. Extracts themes, tensions, commitments, and reflection questions from all enabled sources. Use for batch:weekly-reflection or weekly self-review.
+---
+
+# Weekly Reflection
+
+Transform {{ owner_name }}'s raw weekly data (journal, email, browser, tasks, notes) into narrative reflection that helps them think about their week.
+
+## What It Does vs. Statistical Review
+
+- **Statistical review** tells you **what happened** (counts, patterns, dashboards)
+- **Qualitative reflection** tells you **what it means** (themes, tensions, questions)
+
+This skill focuses on the qualitative layer.
+
+## Invocation
+
+```bash
+cd .claude/skills/weekly-reflection
+uv run --env-file ../../.env weekly_reflection.py
+uv run --env-file ../../.env weekly_reflection.py --redact
+```
+
+Or from the vault root:
+```bash
+uv run --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py
+```
+
+Or via Claude Code: `batch: weekly-reflection`
+
+The `--env-file` flag passes `ANTHROPIC_API_KEY` from `.env` into the subprocess without needing to `source` the file or install `python-dotenv`.
+
+## Workflow
+
+### Phase 1: Text Extraction
+Reads `vault.toml`, and for each enabled source gathers raw text from the last 7 days:
+
+{% if enable_journal -%}
+- **Journal** — entries modified in last 7 days
+{% endif -%}
+{% if notes_app != 'none' -%}
+- **Notes vault** — notes modified in last 7 days (filenames + first paragraphs)
+{% endif -%}
+{% if enable_email -%}
+- **Email** — `notmuch search date:7d..` subjects + first paragraphs
+{% endif -%}
+{% if enable_browser -%}
+- **Browser** — tab titles from high-activity sessions
+{% endif -%}
+{% if enable_tasks -%}
+- **Tasks** — completed and new tasks in the last 7 days
+{% endif %}
+
+Disabled sources are skipped gracefully.
+
+### Phase 2: LLM Synthesis
+
+This phase is where Claude Code takes over. You (Claude) read the extracted text blob (written to `working/scratch/weekly-reflection-input-YYYY-MM-DD.md`) and produce:
+
+- **Themes** — recurring topics, time allocation
+- **Tensions** — stated intentions vs actual behavior, conflicting priorities
+- **Commitments** — promises made, people engaged with
+- **Notable moments** — decisions, realizations, turning points
+- **Reflection questions** — thought-provoking questions based on patterns
+
+### Phase 3: Cross-Source Pattern Detection
+- Topics in 3+ sources → strong signal (highlight)
+- People in journal + email + tasks → active relationship
+- Goals with zero evidence → gap (flag)
+
+## Output
+
+Location: `output/reflections/YYYY-MM-DD-weekly-reflection.md`
+
+```markdown
+---
+created: YYYY-MM-DD
+type: reflection
+status: final
+sources: [journal, notes, email, browser, tasks]  # whichever are enabled
+---
+
+# Weekly Reflection — YYYY-MM-DD
+
+## Themes of the Week
+[2-4 themes with narrative description and cross-source evidence]
+
+## Tensions & Conflicts
+[Detected intention-reality gaps]
+
+## Commitments & Relationships
+[People engaged with, promises made]
+
+## Open Questions
+[Unresolved questions from journal or notes]
+
+## Notable Moments
+[Specific insights, decisions, or shifts]
+
+## Reflections for {{ owner_name }}
+[Thought-provoking questions based on the data]
+```
+
+## Files
+
+- `weekly_reflection.py` — Text extractor (runs first, produces input for Claude)
+- You (Claude) then read the scratch file and write the reflection directly to `output/reflections/`
+
+## Philosophy
+
+Don't summarize — **synthesize**. The point isn't to list what happened (that's review), but to surface meaning, contradiction, and questions {{ owner_name }} should be sitting with.

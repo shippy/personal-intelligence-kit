@@ -1,0 +1,9 @@
+[project]
+name = "weekly-reflection"
+version = "0.1.0"
+description = "Qualitative weekly reflection from cross-source data"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "pydantic-ai>=0.1.0",
+]

@@ -1,0 +1,115 @@
+# Tasks Setup — {{ task_provider }}
+
+{% if task_provider == 'microsoft-todo' -%}
+## Microsoft To-Do
+
+Microsoft To-Do syncs via the Graph API. The easiest path is Azure CLI auth.
+
+### 1. Install Azure CLI
+
+```bash
+brew install azure-cli   # macOS
+```
+
+### 2. Authenticate
+
+```bash
+az login
+```
+
+This opens a browser, you sign in with the same Microsoft account that holds your To-Do tasks.
+
+### 3. First sync
+
+```bash
+uv run .claude/skills/tasks-import/import_tasks.py
+```
+
+⚠️ The template ships with a **stub implementation** for Microsoft To-Do. Full Graph API integration requires `azure-identity` + `msgraph-core`. See the SKILL.md and inline TODO in `import_tasks.py` for extension guidance, or reference the original Claude-Vault `todo-import` skill.
+
+### Alternative: App Registration (non-interactive)
+
+For launchd-scheduled syncs without interactive login:
+
+1. https://portal.azure.com → **App registrations** → **New registration**
+2. Add permission: Microsoft Graph → Delegated → `Tasks.Read`
+3. Grant admin consent (or have your IT admin do so)
+4. Copy the Application (client) ID and Directory (tenant) ID
+5. Add to `.env`:
+   ```
+   AZURE_CLIENT_ID=...
+   AZURE_TENANT_ID=...
+   ```
+
+{% elif task_provider == 'todoist' -%}
+## Todoist
+
+### 1. Get your API token
+
+1. Go to https://todoist.com/app/settings/integrations/developer
+2. Copy the **API token** (40-character hex string)
+
+### 2. Add to .env
+
+```bash
+echo "TODOIST_API_TOKEN=your_token_here" >> .env
+```
+
+### 3. Sync
+
+```bash
+uv run .claude/skills/tasks-import/import_tasks.py
+```
+
+This pulls all active tasks and the last 200 completed tasks. Todoist rate-limits aren't hit at this scale — safe to run frequently.
+
+### 4. Inspect
+
+```bash
+sqlite3 data/tasks.db
+> SELECT title, status, due_date FROM tasks WHERE status='open' ORDER BY due_date;
+```
+
+{% elif task_provider == 'things' -%}
+## Things 3
+
+Things 3 stores its data in a local SQLite database. No auth needed — just Full Disk Access for macOS.
+
+### 1. Grant Full Disk Access
+
+System Settings → Privacy & Security → Full Disk Access → add Terminal.app (or your shell).
+
+### 2. Sync
+
+```bash
+uv run .claude/skills/tasks-import/import_tasks.py
+```
+
+The script auto-discovers the Things database at:
+```
+~/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things Database.thingsdatabase/main.sqlite
+```
+
+### 3. Inspect
+
+```bash
+sqlite3 data/tasks.db
+> SELECT title, status, completed_at FROM tasks WHERE provider='things' LIMIT 20;
+```
+
+### Notes
+
+- Things 3 is macOS/iOS only
+- The skill reads the Mac database; iOS/iPadOS tasks sync to the Mac via Things Cloud
+- Read-only — this skill never modifies the Things database
+{%- endif %}
+
+## Not Just Task Management
+
+Remember: this skill is for **cross-source coherence**, not task management. Use it to answer questions like:
+
+- "Did I create tasks for the intentions I wrote about last week?"
+- "Which tasks have been open longest?"
+- "Am I completing tasks in line with the goals in my notes?"
+
+Use your actual task manager for actually managing tasks.

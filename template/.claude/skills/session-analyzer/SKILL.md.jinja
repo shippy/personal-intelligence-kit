@@ -1,0 +1,59 @@
+---
+name: session-analyzer
+description: Analyze browser tab workspaces for health (stale tabs, dormant sessions, duplicate tabs across sessions). Primarily useful for Vivaldi workspaces but works with any Chromium session format.
+---
+
+# Session Analyzer
+
+Health checks {{ owner_name }}'s browser tab workspaces. Flags:
+
+- **Dormant workspaces** — not touched in N weeks
+- **Bloated workspaces** — > 30 tabs
+- **Duplicate tabs** — same URL across multiple workspaces
+- **Orphaned tabs** — tabs that don't fit any workspace theme
+
+## Invocation
+
+```bash
+cd .claude/skills/session-analyzer
+uv run analyze.py                    # Full health check
+uv run analyze.py --workspace "Work" # Specific workspace
+uv run analyze.py --dormant-weeks 2  # Adjust dormancy threshold
+```
+
+Or via Claude Code: `session: health`
+
+## What It Does
+
+1. Reads browser history (from `browser-ingest` output or directly from browser DB)
+2. Groups tabs by session/workspace (Vivaldi-specific; other browsers treated as one "default" workspace)
+3. Computes per-workspace health metrics
+4. Outputs terse alert + dense report
+5. Sends notification with summary
+
+## Output
+
+### Terse Alert (`output/alerts/session-health-YYYY-MM-DD.md`)
+
+```
+- 🔴 "Apartment" dormant 6 weeks, 34 tabs — archive or revive?
+- 🟡 "Podcast" has 5 tabs duplicated in "Teaching"
+- 🟢 "Work" healthy, 12 active tabs
+```
+
+### Dense Report (`output/reports/session-health-YYYY-MM-DD.md`)
+
+- Full tab list per workspace
+- Last-accessed timestamps
+- Duplicate URL matrix
+
+## Requirements
+
+- Browser source enabled in `vault.toml`
+- Either: `browser-ingest` has been run recently (preferred), or direct access to browser DB
+
+## Notes on Workspace Support
+
+- **Vivaldi** is the only Chromium browser with native tab workspaces
+- **Chrome/Brave/Edge** have "Tab Groups" but they don't persist in the same way
+- This skill treats non-Vivaldi browsers as a single workspace for now

@@ -1,0 +1,40 @@
+# Browser Setup — {{ browser_type }}
+
+## macOS: Full Disk Access
+
+{{ browser_type | title }} stores its History database in a protected location. Before `browser-ingest` can read it:
+
+1. Open **System Settings → Privacy & Security → Full Disk Access**
+2. Click **+** and add your terminal app (Terminal.app, iTerm, Ghostty, etc.)
+3. If you run scheduled syncs via launchd, also add `/opt/homebrew/bin/uv`
+
+## History File Location
+
+| Platform | Path |
+|----------|------|
+{% if browser_type == 'vivaldi' -%}
+| macOS | `~/Library/Application Support/Vivaldi/Default/History` |
+| Linux | `~/.config/vivaldi/Default/History` |
+{% elif browser_type == 'chrome' -%}
+| macOS | `~/Library/Application Support/Google/Chrome/Default/History` |
+| Linux | `~/.config/google-chrome/Default/History` |
+{% elif browser_type == 'brave' -%}
+| macOS | `~/Library/Application Support/BraveSoftware/Brave-Browser/Default/History` |
+| Linux | `~/.config/BraveSoftware/Brave-Browser/Default/History` |
+{% elif browser_type == 'edge' -%}
+| macOS | `~/Library/Application Support/Microsoft Edge/Default/History` |
+| Linux | `~/.config/microsoft-edge/Default/History` |
+{%- endif %}
+
+## Verify
+
+```bash
+uv run .claude/skills/browser-ingest/ingest.py
+sqlite3 data/browser-history.db "SELECT COUNT(*) FROM visits;"
+```
+
+Should return a non-zero count.
+
+## Profile Paths
+
+If you use a non-`Default` browser profile, edit `.claude/skills/_lib/vault_config.py` and update the `browser_history_path()` function to point at your profile directory (e.g. `Profile 2`).

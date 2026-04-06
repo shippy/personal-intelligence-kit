@@ -1,0 +1,129 @@
+---
+name: journal-ingest
+description: Parse journal/diary exports into a queryable SQLite database. Supports Rosebud, Day One (JSON export), and plain markdown journals. Currently configured for {{ journal_type if enable_journal else 'your format' }}.
+---
+
+# Journal Ingest
+
+Parses {{ owner_name }}'s journal entries into a queryable SQLite database at `data/journal.db`.
+
+## Supported Formats
+
+- **Rosebud** — exported markdown files (`rosebud-YYYY-MM-DD_HH-MM-SS.md`)
+- **Day One** — JSON export from Day One app
+- **Plain markdown** — any directory of dated markdown files (one per day)
+
+Journal type is configured in `vault.toml` → `sources.journal.type`. Current value: **{{ journal_type if enable_journal else '(none)' }}**.
+
+## Invocation
+
+```bash
+cd .claude/skills/journal-ingest
+uv run ingest.py             # Import all new entries
+uv run ingest.py --rebuild   # Drop + rebuild the DB
+```
+
+## What It Does
+
+1. Reads journal files from `sources.journal.path` (configured in `vault.toml`)
+2. Parses each entry according to the configured format:
+   - Extracts date, body, mood (if present), tags
+   - Identifies person mentions (capitalized names)
+   - Identifies intention phrases ("I want to...", "I should...")
+3. Writes to `data/journal.db` with full-text search index
+
+## Output Schema
+
+```sql
+CREATE TABLE entries (
+    id INTEGER PRIMARY KEY,
+    date TEXT NOT NULL,
+    filename TEXT,
+    body TEXT NOT NULL,
+    mood TEXT,
+    word_count INTEGER
+);
+
+CREATE TABLE mentions (
+    id INTEGER PRIMARY KEY,
+    entry_id INTEGER,
+    name TEXT NOT NULL,
+    context TEXT,
+    FOREIGN KEY(entry_id) REFERENCES entries(id)
+);
+
+CREATE TABLE intentions (
+    id INTEGER PRIMARY KEY,
+    entry_id INTEGER,
+    text TEXT NOT NULL,
+    FOREIGN KEY(entry_id) REFERENCES entries(id)
+);
+
+CREATE VIRTUAL TABLE entries_fts USING fts5(body, content='entries', content_rowid='id');
+```
+
+## First-Time Setup
+
+{% if enable_journal and journal_type == 'rosebud' -%}
+### Rosebud
+
+1. Export from Rosebud (Settings → "Export to markdown") → saves to `~/Downloads/`
+2. Move the export to `{{ journal_path }}/`
+3. Run `uv run ingest.py`
+
+Rosebud web export: https://my.rosebud.app → Settings → Export to markdown
+{% elif enable_journal and journal_type == 'dayone' -%}
+### Day One
+
+1. In Day One: File → Export → JSON
+2. Save the resulting `.zip` and unpack into `{{ journal_path }}/`
+3. Run `uv run ingest.py`
+{% elif enable_journal and journal_type == 'markdown' -%}
+### Plain Markdown
+
+Point `{{ journal_path }}` at a directory where each file is named `YYYY-MM-DD.md` (or has an ISO date in the filename). Then:
+
+```bash
+uv run ingest.py
+```
+{% else -%}
+Configure `sources.journal.type` in `vault.toml` to one of: `rosebud`, `dayone`, `markdown`.
+{%- endif %}
+
+## Re-running
+
+Idempotent — safe to run as often as you like. Uses file mtime + content hash to skip unchanged entries.
+
+## Data Contract
+
+The analysis skills (`cross-source-queries`, `weekly-reflection`) expect `data/journal.db` to conform to this schema. See `.claude/skills/_lib/SCHEMAS.md` for full details.
+
+**Required tables:**
+
+| Table | Key columns | Purpose |
+|-------|-------------|---------|
+| `entries` | `date`, `speaker`, `content`, `word_count` | Main journal content |
+| `mentions` | `entry_id`, `name`, `context` | Extracted proper nouns |
+| `intentions` | `entry_id`, `text` | Extracted "I want to..." statements |
+
+**Key query the analysis skills run:**
+```sql
+SELECT * FROM entries WHERE date >= ? ORDER BY date DESC;
+SELECT name, COUNT(*) FROM mentions m JOIN entries e ON m.entry_id=e.id WHERE e.date >= ? GROUP BY name;
+SELECT text, e.date FROM intentions i JOIN entries e ON i.entry_id=e.id WHERE e.date >= ?;
+```
+
+## Extending for a New Journal Format
+
+To add support for a new journal app:
+
+1. Add a parser function in `ingest.py` following the `parse_rosebud_file` / `parse_dayone_json` / `parse_markdown_file` pattern
+2. Register it in the `PARSERS` dict with a key matching what you put in `vault.toml → sources.journal.type`
+3. The parser receives a `Path` and must return a `list[Entry]` with at minimum `date` (ISO) and `body` (text)
+4. The mention extraction and intention extraction happen automatically based on the body text
+
+The key constraint: your parser must produce `Entry` objects that the shared code can process. Everything downstream (SQLite write, mention extraction, intention extraction) is generic.
+
+## Integration
+
+`cross-source-queries` and `weekly-reflection` both read from `data/journal.db`. Running ingest is a prerequisite for those skills.

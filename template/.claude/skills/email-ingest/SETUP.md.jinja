@@ -1,0 +1,133 @@
+# Email Ingest — First-Time Setup
+
+Setting up email ingest is the most involved part of the personal intelligence kit. This guide walks you through it for Gmail (most common), with notes for other providers.
+
+## 1. Install tools
+
+**macOS:**
+```bash
+brew install isync notmuch
+```
+
+**Linux:**
+```bash
+apt install isync notmuch
+```
+
+## 2. Generate an app-specific password (Gmail)
+
+Normal Gmail passwords don't work with IMAP. Generate an app password:
+
+1. Visit https://myaccount.google.com/apppasswords
+2. Create a new app password for "Mail" → "Mac"
+3. Copy the 16-character password (you won't see it again)
+
+## 3. Store credentials securely
+
+**macOS (Keychain):**
+```bash
+security add-internet-password \
+  -s imap.gmail.com \
+  -a YOUR_EMAIL@gmail.com \
+  -w
+# (paste the app password when prompted)
+```
+
+**Linux (gpg):**
+```bash
+echo "YOUR_APP_PASSWORD" | gpg --encrypt -r YOUR_GPG_ID > ~/.email-password.gpg
+```
+
+## 4. Configure `~/.mbsyncrc`
+
+Create `~/.mbsyncrc` with this template:
+
+```ini
+# ============================================================
+# Gmail account for {{ owner_name }}
+# ============================================================
+
+IMAPAccount gmail
+Host imap.gmail.com
+User YOUR_EMAIL@gmail.com
+# macOS keychain:
+PassCmd "security find-internet-password -s imap.gmail.com -a YOUR_EMAIL@gmail.com -w"
+# Linux gpg alternative:
+# PassCmd "gpg --decrypt ~/.email-password.gpg"
+TLSType IMAPS
+AuthMechs LOGIN
+
+IMAPStore gmail-remote
+Account gmail
+
+MaildirStore gmail-local
+Subfolders Verbatim
+Path {{ email_path }}/
+Inbox {{ email_path }}/Inbox
+
+Channel gmail
+Far :gmail-remote:
+Near :gmail-local:
+Patterns "INBOX" "[Gmail]/Sent Mail" "[Gmail]/All Mail"
+Create Both
+Expunge Both
+SyncState *
+
+# IMPORTANT: Limit initial sync to the most recent 1000 messages.
+# Remove or increase this once you're comfortable.
+MaxMessages 1000
+```
+
+Replace `YOUR_EMAIL@gmail.com` with your address throughout.
+
+## 5. Run the first sync
+
+```bash
+mkdir -p {{ email_path }}
+mbsync -a
+```
+
+This downloads the most recent 1000 messages to `{{ email_path }}`. It may take several minutes.
+
+## 6. Initialize notmuch
+
+```bash
+notmuch setup
+```
+
+Interactive prompts will ask:
+- **Your name:** `{{ owner_name }}`
+- **Primary email:** your address
+- **Database path:** `{{ email_path }}` (must match mbsync Path)
+
+Then index the messages:
+
+```bash
+notmuch new
+```
+
+## 7. Verify
+
+```bash
+notmuch count 'date:today..'
+notmuch search --limit=5 'date:7d..'
+```
+
+Both should return results.
+
+## Ongoing Sync
+
+Running `data-sync` (or this skill directly) will re-run `mbsync -a && notmuch new`. Safe to run as often as you like — it's incremental.
+
+## Other Providers
+
+- **Fastmail / iCloud / custom IMAP:** Use their IMAP host/port (`imap.fastmail.com:993`, `imap.mail.me.com:993`, etc.) and an app-specific password.
+- **Multiple accounts:** Add additional `IMAPAccount`/`Channel` blocks to `~/.mbsyncrc`.
+
+## Removing the MaxMessages limit
+
+Once you're comfortable and want full history, edit `~/.mbsyncrc` and comment out:
+```ini
+# MaxMessages 1000
+```
+Then re-run `mbsync -a`. The next sync will pull older mail.

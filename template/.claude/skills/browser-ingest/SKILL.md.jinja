@@ -1,0 +1,106 @@
+---
+name: browser-ingest
+description: Import browser history from {{ browser_type if enable_browser else 'configured browser' }} into a queryable SQLite snapshot. Copies the live browser DB to avoid lock contention and filters out noise (search pages, auth redirects).
+---
+
+# Browser Ingest
+
+Imports browser history from the configured browser (see `vault.toml` → `sources.browser.type`) into a clean SQLite snapshot in `data/browser-history.db`.
+
+## Supported Browsers
+
+- **Vivaldi**
+- **Chrome**
+- **Brave**
+- **Edge**
+
+All are Chromium-based and share the same `History` SQLite schema. Auto-detected from `vault.toml`.
+
+## Invocation
+
+```bash
+cd .claude/skills/browser-ingest
+uv run ingest.py              # Import last 30 days
+uv run ingest.py --days 90    # Import last 90 days
+uv run ingest.py --all        # Full history
+```
+
+## What It Does
+
+1. Locates the browser's `History` SQLite file based on `vault.toml` → `sources.browser.type`
+2. Copies it to `/tmp/` (live DB is locked while browser runs)
+3. Extracts URLs with `visit_count`, `last_visit_time`, and `title`
+4. Filters noise:
+   - Search engine result pages (google.com/search, duckduckgo.com, etc.)
+   - Auth redirect flows (`oauth`, `login`, `auth.`)
+   - Local files, `chrome://` internal pages
+   - Very short visits (< 5 seconds)
+5. Writes cleaned data to `data/browser-history.db`
+
+## Output Schema
+
+```sql
+CREATE TABLE visits (
+    id INTEGER PRIMARY KEY,
+    url TEXT NOT NULL,
+    title TEXT,
+    visit_count INTEGER,
+    last_visit_time TIMESTAMP,
+    domain TEXT
+);
+```
+
+## Platform Paths
+
+**macOS:**
+| Browser | Path |
+|---------|------|
+| Vivaldi | `~/Library/Application Support/Vivaldi/Default/History` |
+| Chrome | `~/Library/Application Support/Google/Chrome/Default/History` |
+| Brave | `~/Library/Application Support/BraveSoftware/Brave-Browser/Default/History` |
+| Edge | `~/Library/Application Support/Microsoft Edge/Default/History` |
+
+**Linux:**
+| Browser | Path |
+|---------|------|
+| Vivaldi | `~/.config/vivaldi/Default/History` |
+| Chrome | `~/.config/google-chrome/Default/History` |
+| Brave | `~/.config/BraveSoftware/Brave-Browser/Default/History` |
+| Edge | `~/.config/microsoft-edge/Default/History` |
+
+## Permissions (macOS)
+
+On recent macOS versions you may need to grant Full Disk Access to Terminal.app (or your shell) before this skill can read the browser DB. System Settings → Privacy & Security → Full Disk Access.
+
+## Data Contract
+
+The analysis skills expect `data/browser-history.db` to conform to this schema. See `.claude/skills/_lib/SCHEMAS.md` for full details.
+
+**Required table:**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `url` | TEXT | Full URL |
+| `title` | TEXT | Page title |
+| `visit_count` | INTEGER | Total visits |
+| `last_visit_time` | TIMESTAMP | ISO 8601 |
+| `domain` | TEXT | Extracted hostname |
+
+**Key queries the analysis skills run:**
+```sql
+SELECT * FROM visits WHERE last_visit_time >= ? ORDER BY last_visit_time DESC;
+SELECT domain, SUM(visit_count) FROM visits WHERE last_visit_time >= ? GROUP BY domain;
+SELECT title FROM visits WHERE last_visit_time >= ? AND title LIKE ?;
+```
+
+## Extending for Non-Chromium Browsers
+
+All Chromium browsers share the same History SQLite schema. For a non-Chromium browser (Firefox, Safari):
+
+1. Copy the source browser's history database to `/tmp/` (to avoid locks)
+2. Map the browser's schema to the `visits` table above
+3. Firefox stores history in `places.sqlite` with `moz_places` (url, title) + `moz_historyvisits` (visit_date)
+4. Safari stores history in `~/Library/Safari/History.db` with `history_items` + `history_visits`
+5. Write the normalized data to `data/browser-history.db`
+
+The constraint: produce the same `visits` table schema. All downstream analysis is browser-agnostic.

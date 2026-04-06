@@ -1,0 +1,163 @@
+_min_copier_version: "9.0.0"
+_subdirectory: template
+_templates_suffix: .jinja
+
+_skip_if_exists:
+  - ".env"
+  - "output/**"
+  - "logs/**"
+  - "data/**"
+  - "working/**"
+
+_exclude:
+  - "copier.yml"
+  - "~*"
+  - "__pycache__"
+  - "*.py[co]"
+  - ".venv"
+  - ".DS_Store"
+  # Conditionally exclude skill directories when their source is disabled
+  - "{{ '.claude/skills/email-ingest' if not enable_email else 'NEVER_MATCH' }}"
+  - "{{ '.claude/skills/email-analyzer' if not enable_email else 'NEVER_MATCH' }}"
+  - "{{ '.claude/skills/browser-ingest' if not enable_browser else 'NEVER_MATCH' }}"
+  - "{{ '.claude/skills/session-analyzer' if not enable_browser else 'NEVER_MATCH' }}"
+  - "{{ '.claude/skills/journal-ingest' if not enable_journal else 'NEVER_MATCH' }}"
+  - "{{ '.claude/skills/tasks-import' if not enable_tasks else 'NEVER_MATCH' }}"
+  - "{{ '.claude/skills/draft-coach' if notes_app == 'none' else 'NEVER_MATCH' }}"
+  - "{{ '.claude/skills/stale-drafts' if notes_app == 'none' else 'NEVER_MATCH' }}"
+  - "{{ 'config' if not enable_scheduled_tasks else 'NEVER_MATCH' }}"
+  - "{{ 'docs/SETUP-email.md' if not enable_email else 'NEVER_MATCH' }}"
+  - "{{ 'docs/SETUP-browser.md' if not enable_browser else 'NEVER_MATCH' }}"
+  - "{{ 'docs/SETUP-journal.md' if not enable_journal else 'NEVER_MATCH' }}"
+  - "{{ 'docs/SETUP-tasks.md' if not enable_tasks else 'NEVER_MATCH' }}"
+
+# ============================================================
+# Identity
+# ============================================================
+
+vault_name:
+  type: str
+  help: "Name for your vault (used in CLAUDE.md header)"
+  default: "My Intelligence Vault"
+
+owner_name:
+  type: str
+  help: "Your name (used throughout CLAUDE.md — e.g., 'Alex', 'Jordan')"
+  default: "you"
+
+# ============================================================
+# Notes / Knowledge Base
+# ============================================================
+
+notes_app:
+  type: str
+  help: "Your notes/PKM app (read-only reference for this vault)"
+  choices:
+    Obsidian: obsidian
+    Logseq: logseq
+    Plain markdown files: markdown
+    None: none
+  default: obsidian
+
+notes_vault_path:
+  type: str
+  help: "Absolute path to your notes vault (read-only reference)"
+  default: "~/Documents/Notes"
+  when: "{{ notes_app != 'none' }}"
+
+drafts_path:
+  type: str
+  help: "Path to drafts folder within your notes vault"
+  default: "~/Documents/Notes/Drafts"
+  when: "{{ notes_app != 'none' }}"
+
+# ============================================================
+# Data Sources
+# ============================================================
+
+enable_email:
+  type: bool
+  help: "Enable email integration? (requires mbsync + notmuch)"
+  default: false
+
+email_path:
+  type: str
+  help: "Path to Maildir email archive"
+  default: "~/data/email"
+  when: "{{ enable_email }}"
+
+enable_browser:
+  type: bool
+  help: "Enable browser history / session analysis? (Chromium-based browsers)"
+  default: false
+
+browser_type:
+  type: str
+  help: "Which Chromium-based browser?"
+  choices:
+    Vivaldi: vivaldi
+    Chrome: chrome
+    Brave: brave
+    Edge: edge
+  default: vivaldi
+  when: "{{ enable_browser }}"
+
+enable_journal:
+  type: bool
+  help: "Enable journal/diary integration?"
+  default: false
+
+journal_type:
+  type: str
+  help: "Journal source format"
+  choices:
+    Rosebud: rosebud
+    Day One (JSON export): dayone
+    Markdown files: markdown
+  default: rosebud
+  when: "{{ enable_journal }}"
+
+journal_path:
+  type: str
+  help: "Path to journal data directory"
+  default: "~/data/journal"
+  when: "{{ enable_journal }}"
+
+enable_tasks:
+  type: bool
+  help: "Enable task manager integration?"
+  default: false
+
+task_provider:
+  type: str
+  help: "Task manager provider"
+  choices:
+    Microsoft To-Do: microsoft-todo
+    Todoist: todoist
+    Things 3 (macOS): things
+  default: microsoft-todo
+  when: "{{ enable_tasks }}"
+
+task_db_path:
+  type: str
+  help: "Path to task database directory"
+  default: "~/data/tasks"
+  when: "{{ enable_tasks }}"
+
+# ============================================================
+# MCP Integrations
+# ============================================================
+
+enable_contacts_mcp:
+  type: bool
+  help: "Enable contacts provider? (Clay MCP server — requires CLAY_API_KEY)"
+  default: false
+
+# ============================================================
+# Scheduling
+# ============================================================
+
+enable_scheduled_tasks:
+  type: bool
+  help: "Generate launchd plist templates for scheduled sync/reflection runs?"
+  default: true

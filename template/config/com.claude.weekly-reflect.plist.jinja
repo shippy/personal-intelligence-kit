@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.claude.weekly-reflect</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/uv</string>
+        <string>run</string>
+        <string>--env-file</string>
+        <string>{{ _copier_conf.dst_path | string }}/.env</string>
+        <string>{{ _copier_conf.dst_path | string }}/.claude/skills/weekly-reflection/weekly_reflection.py</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>{{ _copier_conf.dst_path | string }}</string>
+
+    <key>StandardOutPath</key>
+    <string>{{ _copier_conf.dst_path | string }}/logs/reflect-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{ _copier_conf.dst_path | string }}/logs/reflect-stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>LowPriorityIO</key>
+    <true/>
+</dict>
+</plist>

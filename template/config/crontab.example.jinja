@@ -1,0 +1,8 @@
+# Cron alternative for Linux users.
+# Install with: crontab -e  (then paste these lines)
+
+# Daily data sync at 20:00
+0 20 * * * cd {{ _copier_conf.dst_path | string }} && /usr/bin/env uv run --env-file .env .claude/skills/data-sync/sync_all.py --yes >> logs/sync-cron.log 2>&1
+
+# Weekly reflection, Sunday 09:00
+0 9 * * 0 cd {{ _copier_conf.dst_path | string }} && /usr/bin/env uv run --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py >> logs/reflect-cron.log 2>&1

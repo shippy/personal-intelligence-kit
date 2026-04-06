@@ -1,0 +1,124 @@
+---
+name: tasks-import
+description: Sync tasks from your task manager ({{ task_provider if enable_tasks else 'configured provider' }}) into a local SQLite database for cross-source queries. Not for task management — only for coherence checks against journal intentions, calendar, and email.
+---
+
+# Tasks Import
+
+Imports {{ owner_name }}'s tasks from their configured task manager into `data/tasks.db`. Purpose: cross-source coherence (does what you're *doing* match what you're *saying* and *committing to*?), **not** task management.
+
+## Supported Providers
+
+- **Microsoft To-Do** (Graph API) — requires Azure CLI auth (`az login`) or app registration
+- **Todoist** (REST API v2) — requires API token in `.env`
+- **Things 3** (macOS only) — reads local SQLite directly
+
+Configured via `vault.toml` → `sources.tasks.provider`. Current value: **{{ task_provider if enable_tasks else '(none)' }}**.
+
+## Invocation
+
+```bash
+cd .claude/skills/tasks-import
+uv run import_tasks.py              # Incremental sync
+uv run import_tasks.py --full       # Full re-import
+```
+
+## What It Does
+
+1. Fetches tasks from the configured provider
+2. Normalizes into a common schema:
+   - `id`, `title`, `body`, `status` (`open`/`done`/`cancelled`)
+   - `created_at`, `completed_at`, `due_date`
+   - `list_name` (or project name)
+3. Writes to `data/tasks.db`
+4. Logs sync activity
+
+## Output Schema
+
+```sql
+CREATE TABLE tasks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    body TEXT,
+    status TEXT CHECK(status IN ('open', 'done', 'cancelled')),
+    list_name TEXT,
+    created_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    due_date TIMESTAMP,
+    provider TEXT NOT NULL,
+    raw_json TEXT
+);
+```
+
+## Provider Setup
+
+{% if enable_tasks and task_provider == 'microsoft-todo' -%}
+### Microsoft To-Do (current config)
+
+This skill uses the Microsoft Graph API. The simplest path is Azure CLI:
+
+```bash
+az login
+```
+
+The first `import_tasks.py` run will prompt for consent to read your To-Do tasks.
+
+For non-interactive use (scheduled syncs), set up an app registration:
+1. https://portal.azure.com → App registrations → New
+2. Add Microsoft Graph delegated permission: `Tasks.Read`
+3. Add `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` to `.env`
+{% elif enable_tasks and task_provider == 'todoist' -%}
+### Todoist (current config)
+
+1. Go to https://todoist.com/app/settings/integrations/developer
+2. Copy your API token
+3. Add to `.env`: `TODOIST_API_TOKEN=xxx`
+{% elif enable_tasks and task_provider == 'things' -%}
+### Things 3 (current config)
+
+No setup required — reads the local Things database at `~/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things Database.thingsdatabase/main.sqlite`.
+
+Requires Full Disk Access for Terminal.app on recent macOS.
+{%- endif %}
+
+## Data Contract
+
+The analysis skills expect `data/tasks.db` to conform to this schema. See `.claude/skills/_lib/SCHEMAS.md` for full details.
+
+**Required table:**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | TEXT PK | Provider-prefixed (e.g. `todoist:123`) |
+| `title` | TEXT | Task title |
+| `body` | TEXT | Optional description |
+| `status` | TEXT | `open`, `done`, or `cancelled` |
+| `list_name` | TEXT | Project/list name |
+| `created_at` | TIMESTAMP | ISO 8601 |
+| `completed_at` | TIMESTAMP | NULL if not done |
+| `due_date` | TIMESTAMP | NULL if no deadline |
+| `provider` | TEXT | `todoist`, `microsoft-todo`, `things` |
+
+**Key queries the analysis skills run:**
+```sql
+SELECT * FROM tasks WHERE DATE(created_at) >= ?;     -- Created this week
+SELECT * FROM tasks WHERE DATE(completed_at) >= ?;    -- Completed this week
+SELECT * FROM tasks WHERE status='open' AND due_date < DATE('now');  -- Overdue
+SELECT * FROM tasks WHERE title LIKE ? OR body LIKE ?;  -- Keyword search
+```
+
+## Extending for a New Provider
+
+To add support for a new task manager:
+
+1. Write an import function (e.g. `import_linear()`) that fetches tasks from the API
+2. Normalize each task into the schema above using the `upsert()` helper
+3. Use a provider-prefixed `id` (e.g. `linear:ISSUE-123`) to prevent collisions
+4. Register it in the `PROVIDERS` dict
+5. Add the provider to `vault.toml → sources.tasks.provider` choices
+
+The constraint: your import must produce rows matching the `tasks` table schema. Everything downstream (cross-source queries, weekly reflection) is provider-agnostic.
+
+## Cross-Source Use
+
+After sync, `cross-source-queries/intention_reality_gaps.py` can check whether tasks exist for recently stated journal intentions. `weekly-reflection` can show which tasks were completed in the last 7 days.

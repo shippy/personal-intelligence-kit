@@ -1,0 +1,82 @@
+# Scheduled Tasks
+
+This directory contains templates for running sync and reflection on a schedule.
+
+## macOS (launchd)
+
+Two `.plist` files are provided:
+
+| File | Schedule | What it runs |
+|------|----------|--------------|
+| `com.claude.daily-sync.plist` | Daily at 20:00 | `data-sync` skill |
+| `com.claude.weekly-reflect.plist` | Sunday at 09:00 | `weekly-reflection` skill |
+
+### Install
+
+```bash
+# Copy plists into LaunchAgents
+cp config/com.claude.daily-sync.plist ~/Library/LaunchAgents/
+cp config/com.claude.weekly-reflect.plist ~/Library/LaunchAgents/
+
+# Load
+launchctl load ~/Library/LaunchAgents/com.claude.daily-sync.plist
+launchctl load ~/Library/LaunchAgents/com.claude.weekly-reflect.plist
+
+# Verify
+launchctl list | grep com.claude
+```
+
+### Logs
+
+- Daily sync: `logs/sync-stdout.log`, `logs/sync-stderr.log`
+- Weekly reflect: `logs/reflect-stdout.log`, `logs/reflect-stderr.log`
+
+### Uninstall
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.claude.daily-sync.plist
+launchctl unload ~/Library/LaunchAgents/com.claude.weekly-reflect.plist
+rm ~/Library/LaunchAgents/com.claude.daily-sync.plist
+rm ~/Library/LaunchAgents/com.claude.weekly-reflect.plist
+```
+
+### Prerequisite: Full Disk Access
+
+On recent macOS, the launchd-spawned process needs Full Disk Access to read email, browser, and other sources. Grant it to:
+
+- `/opt/homebrew/bin/uv` (the binary invoked by the plist)
+- Or Terminal.app if you prefer to run manually
+
+System Settings → Privacy & Security → Full Disk Access.
+
+### Customizing the schedule
+
+Edit the `StartCalendarInterval` dict. `Weekday` uses `0 = Sunday`, `1 = Monday`, etc.
+
+```xml
+<key>StartCalendarInterval</key>
+<dict>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>30</integer>
+</dict>
+```
+
+For multiple run times, make `StartCalendarInterval` an array of dicts.
+
+## Linux (cron)
+
+Use `crontab.example` instead. Install with:
+
+```bash
+crontab -e
+# then paste the lines from config/crontab.example
+```
+
+## Manual Runs
+
+Any time:
+
+```bash
+uv run .claude/skills/data-sync/sync_all.py --yes
+uv run .claude/skills/weekly-reflection/weekly_reflection.py
+```

@@ -1,0 +1,82 @@
+# Journal Setup — {{ journal_type }}
+
+Journal data lives at `{{ journal_path }}` (configured in `vault.toml`).
+
+{% if journal_type == 'rosebud' -%}
+## Rosebud
+
+1. Sign in at https://my.rosebud.app
+2. Settings → **Export to markdown** → click **Export**
+3. The file downloads to `~/Downloads/rosebud-YYYY-MM-DD_HH-MM-SS.md`
+4. Move it to `{{ journal_path }}/`
+
+Automate the move:
+```bash
+mkdir -p {{ journal_path }}
+mv ~/Downloads/rosebud-*.md {{ journal_path }}/
+```
+
+Run the ingest:
+```bash
+uv run .claude/skills/journal-ingest/ingest.py
+```
+
+The parser handles Rosebud's multi-entry-per-file format. Re-running is safe — already-imported entries are skipped (unique constraint on `date + filename + body`).
+
+{% elif journal_type == 'dayone' -%}
+## Day One
+
+1. Open Day One app
+2. **File → Export → JSON**
+3. Save the resulting `.zip`
+4. Unpack it into `{{ journal_path }}/`:
+   ```bash
+   mkdir -p {{ journal_path }}
+   unzip ~/Downloads/DayOne-export.zip -d {{ journal_path }}/
+   ```
+
+The JSON export is a single `Journal.json` file (or multiple, if you have multiple journals).
+
+Run the ingest:
+```bash
+uv run .claude/skills/journal-ingest/ingest.py
+```
+
+{% elif journal_type == 'markdown' -%}
+## Plain Markdown
+
+Organize journal files at `{{ journal_path }}` with ISO dates in filenames:
+
+```
+{{ journal_path }}/
+├── 2026-01-15.md
+├── 2026-01-16.md
+├── 2026-01-17.md
+└── ...
+```
+
+The ingest parser looks for `YYYY-MM-DD` anywhere in the filename. If your files use a different naming scheme, edit `journal-ingest/ingest.py` → `parse_markdown_file()`.
+
+Run the ingest:
+```bash
+uv run .claude/skills/journal-ingest/ingest.py
+```
+{%- endif %}
+
+## Re-ingesting
+
+Safe to re-run anytime. Use `--rebuild` to drop the database and start fresh:
+
+```bash
+uv run .claude/skills/journal-ingest/ingest.py --rebuild
+```
+
+## Inspect the Database
+
+```bash
+sqlite3 data/journal.db
+> .tables
+> SELECT date, filename, word_count FROM entries ORDER BY date DESC LIMIT 10;
+> SELECT name, COUNT(*) FROM mentions GROUP BY name ORDER BY 2 DESC LIMIT 20;
+> SELECT text FROM intentions ORDER BY id DESC LIMIT 10;
+```

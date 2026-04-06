@@ -1,0 +1,26 @@
+# Secrets
+.env
+.envrc
+
+# User data (actual content stays local)
+output/
+working/
+logs/
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+
+# Editors
+.DS_Store
+.vscode/
+.idea/
+
+# Obsidian workspace state (keep config, skip per-user state)
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json

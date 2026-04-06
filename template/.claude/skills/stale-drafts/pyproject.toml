@@ -1,0 +1,9 @@
+[project]
+name = "stale-drafts"
+version = "0.1.0"
+description = "Draft queue ranking with LLM finishability assessment"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "pydantic-ai>=0.1.0",
+]

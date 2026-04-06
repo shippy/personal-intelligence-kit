@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(python3:*)",
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(sqlite3:*)",
+      "Bash(terminal-notifier:*)",
+      "Bash(notify-send:*)",
+      "Bash(mbsync:*)",
+      "Bash(notmuch:*)"
+    ]
+  }
+}

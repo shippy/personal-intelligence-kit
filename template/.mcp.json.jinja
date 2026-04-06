@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+{%- if enable_contacts_mcp %}
+    "clay": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@clayhq/clay-mcp"],
+      "env": {
+        "CLAY_API_KEY": "${CLAY_API_KEY}"
+      }
+    }
+{%- endif %}
+  }
+}
