@@ -14,6 +14,10 @@
       "Bash(notify-send:*)",
       "Bash(mbsync:*)",
       "Bash(notmuch:*)"
-    ]
+    ]{% if notes_app != 'none' %},
+    "deny": [
+      "Edit: {{ notes_vault_path }}/**",
+      "Write: {{ notes_vault_path }}/**"
+    ]{% endif %}
   }
 }
