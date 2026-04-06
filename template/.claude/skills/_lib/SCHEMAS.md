@@ -150,7 +150,7 @@ SELECT title, domain FROM visits WHERE last_visit_time >= ? AND title LIKE ?;
 ## `data/git-commits.db` — Git Commit Stats
 
 Produced by: `git-stats`
-Read by: `cross-source-queries`
+Read by: `weekly-reflection`, `cross-source-queries`
 
 ```sql
 CREATE TABLE commits (

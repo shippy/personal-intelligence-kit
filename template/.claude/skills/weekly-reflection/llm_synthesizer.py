@@ -109,6 +109,7 @@ Data source weighting:
 - **Browser tabs** are LOW signal. Tabs accumulate over weeks/months. Don't treat tab counts as evidence of attention.
 - **Email is a partial window only.** Most real communication happens elsewhere (Slack, messaging). Don't overweight email.
 - **Notes vault** notes are strong signals when modified recently — they represent processed thought.
+- **Git commits** show concrete output. Commit subjects reveal what was actually built. Co-authorship with Claude indicates AI-assisted work. Repos with many commits reveal where energy went.
 
 Guidelines:
 - Be conversational and narrative, not statistical
@@ -187,6 +188,29 @@ and technical work."""
                 ctx += f"**{domain}** (sample titles):\n"
                 for t in titles[:8]:
                     ctx += f"- {t}\n"
+                ctx += "\n"
+
+        if text.git_commits:
+            ctx += "\n## Git Commits (concrete output)\n\n"
+            # Group by repo for readability
+            by_repo: dict[str, list] = {}
+            for c in text.git_commits:
+                by_repo.setdefault(c.repo, []).append(c)
+            for repo, commits in sorted(by_repo.items(), key=lambda x: -len(x[1])):
+                total_add = sum(c.insertions for c in commits)
+                total_del = sum(c.deletions for c in commits)
+                co_count = sum(1 for c in commits if c.co_authors)
+                ctx += f"**{repo}** ({len(commits)} commits, +{total_add}/-{total_del}"
+                if co_count:
+                    ctx += f", {co_count} co-authored"
+                ctx += "):\n"
+                for c in commits[:15]:
+                    line = f"- {c.subject}"
+                    if c.co_authors:
+                        line += f" [with {', '.join(c.co_authors)}]"
+                    ctx += line + "\n"
+                if len(commits) > 15:
+                    ctx += f"- ... and {len(commits) - 15} more\n"
                 ctx += "\n"
 
         return ctx

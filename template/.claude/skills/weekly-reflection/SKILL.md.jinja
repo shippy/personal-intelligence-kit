@@ -5,7 +5,7 @@ description: Transform raw data from the past week into a qualitative narrative 
 
 # Weekly Reflection
 
-Transform {{ owner_name }}'s raw weekly data (journal, email, browser, tasks, notes) into narrative reflection that helps them think about their week.
+Transform {{ owner_name }}'s raw weekly data (journal, email, browser, tasks, notes, git) into narrative reflection that helps them think about their week.
 
 ## What It Does vs. Statistical Review
 
@@ -50,6 +50,9 @@ Reads `vault.toml`, and for each enabled source gathers raw text from the last 7
 {% endif -%}
 {% if enable_tasks -%}
 - **Tasks** — completed and new tasks in the last 7 days
+{% endif -%}
+{% if enable_git -%}
+- **Git** — commits across tracked repos, co-authorship with Claude
 {% endif %}
 
 Disabled sources are skipped gracefully.

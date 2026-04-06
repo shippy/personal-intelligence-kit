@@ -7,6 +7,7 @@ Queries databases and extracts text from all enabled sources:
 - Email archive (notmuch CLI)
 - Notes vault (filesystem)
 - Browser history (browser-history.db)
+- Git commits (git-commits.db)
 
 Each extractor checks vault.toml before accessing a source and returns
 empty results if the source is disabled or unavailable.
@@ -29,6 +30,7 @@ from vault_config import (
     journal_db_path,
     tasks_db_path,
     browser_db_path,
+    git_commits_db_path,
     owner_name,
 )
 
@@ -72,12 +74,23 @@ class VaultNote:
 
 
 @dataclass
+class GitCommit:
+    repo: str
+    subject: str
+    date: str
+    insertions: int
+    deletions: int
+    co_authors: List[str]
+
+
+@dataclass
 class WeeklyText:
     journal_entries: List[JournalEntry]
     tasks: Dict[str, List[Task]]  # created, completed, overdue
     emails: Dict[str, List[Email]]  # sent, received
     notes: List[VaultNote]
     browser_titles: Dict[str, List[str]]  # domain -> page titles
+    git_commits: List[GitCommit] = field(default_factory=list)
 
 
 class TextExtractor:
@@ -96,6 +109,7 @@ class TextExtractor:
             emails=self.extract_emails(),
             notes=self.extract_notes(),
             browser_titles=self.extract_browser(),
+            git_commits=self.extract_git(),
         )
 
     def extract_journal(self) -> List[JournalEntry]:
@@ -299,6 +313,43 @@ class TextExtractor:
             return {}
 
 
+    def extract_git(self) -> List[GitCommit]:
+        """Extract git commits from data/git-commits.db."""
+        print("Extracting git commits...")
+        db = git_commits_db_path()
+        if not db or not db.exists():
+            print("  ⚠ Git commits database not found")
+            return []
+
+        try:
+            conn = sqlite3.connect(db)
+            rows = conn.execute(
+                "SELECT c.repo, c.subject, c.date, c.insertions, c.deletions, "
+                "  GROUP_CONCAT(ca.name, ', ') "
+                "FROM commits c "
+                "LEFT JOIN co_authors ca ON c.hash = ca.commit_hash "
+                "WHERE DATE(c.date) >= ? "
+                "GROUP BY c.hash "
+                "ORDER BY c.date DESC",
+                (self.start_date,),
+            ).fetchall()
+            commits = [
+                GitCommit(
+                    repo=r[0], subject=r[1], date=r[2],
+                    insertions=r[3] or 0, deletions=r[4] or 0,
+                    co_authors=[x.strip() for x in r[5].split(",")] if r[5] else [],
+                )
+                for r in rows
+            ]
+            conn.close()
+            co_authored = sum(1 for c in commits if c.co_authors)
+            print(f"  ✓ {len(commits)} commits ({co_authored} co-authored)")
+            return commits
+        except Exception as e:
+            print(f"  ⚠ Git extraction failed: {e}")
+            return []
+
+
 if __name__ == "__main__":
     load_config()
     extractor = TextExtractor(days_back=7)
@@ -310,3 +361,4 @@ if __name__ == "__main__":
     print(f"Emails received: {len(text.emails['received'])}")
     print(f"Notes modified: {len(text.notes)}")
     print(f"Browser domains: {len(text.browser_titles)}")
+    print(f"Git commits: {len(text.git_commits)}")
