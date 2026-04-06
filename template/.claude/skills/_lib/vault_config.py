@@ -172,6 +172,14 @@ def tasks_db_path() -> Optional[Path]:
     return vault_root() / "data" / "tasks.db"
 
 
+def git_scopes() -> list[dict[str, Any]]:
+    """Return list of {path, authors} dicts from git source config."""
+    s = get_source("git")
+    if not s:
+        return []
+    return s.get("scopes", [])
+
+
 def tasks_source_dir() -> Optional[Path]:
     """Return the raw tasks data directory from vault.toml (for providers that dump files)."""
     s = get_source("tasks")
@@ -200,6 +208,13 @@ def browser_db_path() -> Optional[Path]:
     if not source_enabled("browser"):
         return None
     return vault_root() / "data" / "browser-history.db"
+
+
+def git_commits_db_path() -> Optional[Path]:
+    """Normalized path to the git commits SQLite database (from git-stats)."""
+    if not source_enabled("git"):
+        return None
+    return vault_root() / "data" / "git-commits.db"
 
 
 # ---------- Output ----------

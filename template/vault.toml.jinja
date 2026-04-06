@@ -46,6 +46,22 @@ provider = "{{ task_provider }}"
 db_path = "{{ task_db_path }}"
 {%- endif %}
 
+{%- if enable_git %}
+
+[sources.git]
+enabled = true
+# Each scope maps a parent directory to the author email(s) to track there.
+# Add more [[sources.git.scopes]] sections as needed.
+#
+# [[sources.git.scopes]]
+# path = "~/Documents"
+# authors = ["you@example.com"]
+#
+# [[sources.git.scopes]]
+# path = "~/Work"
+# authors = ["you@company.com"]
+{%- endif %}
+
 [output]
 root = "output"
 reports = "output/reports"

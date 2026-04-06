@@ -23,6 +23,7 @@ _exclude:
   - "{{ '.claude/skills/session-analyzer' if not enable_browser else 'NEVER_MATCH' }}"
   - "{{ '.claude/skills/journal-ingest' if not enable_journal else 'NEVER_MATCH' }}"
   - "{{ '.claude/skills/tasks-import' if not enable_tasks else 'NEVER_MATCH' }}"
+  - "{{ '.claude/skills/git-stats' if not enable_git else 'NEVER_MATCH' }}"
   - "{{ '.claude/skills/draft-coach' if notes_app == 'none' else 'NEVER_MATCH' }}"
   - "{{ '.claude/skills/stale-drafts' if notes_app == 'none' else 'NEVER_MATCH' }}"
   - "{{ 'config' if not enable_scheduled_tasks else 'NEVER_MATCH' }}"
@@ -131,6 +132,11 @@ journal_path:
 enable_tasks:
   type: bool
   help: "Enable task manager integration?"
+  default: false
+
+enable_git:
+  type: bool
+  help: "Enable git commit stats? (tracks commits across repos, co-authorship with Claude)"
   default: false
 
 task_provider:

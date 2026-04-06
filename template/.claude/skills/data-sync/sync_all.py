@@ -112,11 +112,21 @@ def sync_tasks() -> SyncResult:
     return SyncResult("tasks", ok, time.time() - start, msg)
 
 
+def sync_git() -> SyncResult:
+    start = time.time()
+    script = SKILLS_DIR / "git-stats" / "ingest.py"
+    if not script.exists():
+        return SyncResult("git", False, 0, "git-stats skill not installed")
+    ok, msg = run_subprocess(["uv", "run", str(script)], cwd=script.parent)
+    return SyncResult("git", ok, time.time() - start, msg)
+
+
 WORKER_MAP = {
     "email": sync_email,
     "browser": sync_browser,
     "journal": sync_journal,
     "tasks": sync_tasks,
+    "git": sync_git,
 }
 
 

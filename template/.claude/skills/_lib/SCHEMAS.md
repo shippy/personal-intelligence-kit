@@ -147,6 +147,66 @@ SELECT title, domain FROM visits WHERE last_visit_time >= ? AND title LIKE ?;
 
 ---
 
+## `data/git-commits.db` — Git Commit Stats
+
+Produced by: `git-stats`
+Read by: `cross-source-queries`
+
+```sql
+CREATE TABLE commits (
+    hash TEXT PRIMARY KEY,           -- Full commit SHA
+    repo TEXT NOT NULL,              -- Repository directory name
+    repo_path TEXT NOT NULL,         -- Absolute path to repository
+    author_name TEXT NOT NULL,
+    author_email TEXT NOT NULL,
+    date TEXT NOT NULL,              -- ISO 8601 datetime
+    subject TEXT NOT NULL,           -- First line of commit message
+    branch TEXT,                     -- Best-effort branch from decorations
+    files_changed INTEGER,
+    insertions INTEGER,
+    deletions INTEGER,
+    scope TEXT NOT NULL              -- Superdirectory path that matched
+);
+
+CREATE TABLE co_authors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    commit_hash TEXT NOT NULL,
+    name TEXT NOT NULL,              -- e.g. "Claude Opus 4.6 (1M context)"
+    email TEXT NOT NULL,             -- e.g. "noreply@anthropic.com"
+    FOREIGN KEY(commit_hash) REFERENCES commits(hash) ON DELETE CASCADE,
+    UNIQUE(commit_hash, email)
+);
+
+CREATE INDEX idx_commits_date ON commits(date);
+CREATE INDEX idx_commits_repo ON commits(repo);
+CREATE INDEX idx_commits_author ON commits(author_email);
+CREATE INDEX idx_co_authors_email ON co_authors(email);
+```
+
+### Query patterns
+
+```sql
+-- Commits per repo
+SELECT repo, COUNT(*) as commits, SUM(insertions) as added, SUM(deletions) as removed
+FROM commits WHERE date >= ? GROUP BY repo ORDER BY commits DESC;
+
+-- Co-authorship rate
+SELECT COUNT(*) as total, COUNT(ca.commit_hash) as co_authored
+FROM commits c LEFT JOIN co_authors ca ON c.hash = ca.commit_hash
+WHERE c.date >= ?;
+
+-- Co-author breakdown
+SELECT ca.name, COUNT(*) as commits FROM co_authors ca
+JOIN commits c ON ca.commit_hash = c.hash
+WHERE c.date >= ? GROUP BY ca.name ORDER BY commits DESC;
+
+-- Daily volume
+SELECT DATE(date) as day, COUNT(*) as commits
+FROM commits WHERE date >= ? GROUP BY day ORDER BY day;
+```
+
+---
+
 ## Email — No SQLite; via `notmuch` CLI
 
 Produced by: `email-ingest` (mbsync + notmuch)
