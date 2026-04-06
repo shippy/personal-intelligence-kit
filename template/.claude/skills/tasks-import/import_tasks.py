@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["httpx"]
+# dependencies = ["httpx", "azure-identity>=1.15.0"]
 # ///
 """
 Tasks Import
@@ -138,20 +138,160 @@ def import_todoist(full: bool) -> int:
     return imported
 
 
-# ---------- Microsoft To-Do ----------
+# ---------- Microsoft To-Do (Graph API) ----------
+
+# Public client ID for Microsoft Graph CLI tools — no app registration needed
+_MS_CLIENT_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
+_MS_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+_MS_SCOPE = "Tasks.Read"
+
+
+def _ms_auth_record_path() -> Path:
+    """Path to the persisted Azure authentication record."""
+    return vault_root() / "data" / "ms_auth_record.json"
+
+
+def _get_ms_credential():
+    """Build a DeviceCodeCredential with persistent token cache.
+
+    First run triggers interactive device-code flow (browser sign-in).
+    Subsequent runs re-use the cached token silently.
+    """
+    from azure.identity import (
+        AuthenticationRecord,
+        DeviceCodeCredential,
+        TokenCachePersistenceOptions,
+    )
+
+    cache_options = TokenCachePersistenceOptions(name="pik-todo")
+
+    auth_record = None
+    record_path = _ms_auth_record_path()
+    if record_path.exists():
+        try:
+            auth_record = AuthenticationRecord.deserialize(record_path.read_text())
+        except Exception as exc:
+            print(f"Warning: could not load auth record: {exc}")
+
+    def _prompt(uri, code, expires_in):
+        print(f"\n  Visit {uri} and enter code: {code}  (expires in {expires_in}s)\n")
+
+    credential = DeviceCodeCredential(
+        client_id=_MS_CLIENT_ID,
+        tenant_id="common",
+        prompt_callback=_prompt,
+        cache_persistence_options=cache_options,
+        authentication_record=auth_record,
+    )
+
+    if auth_record is None:
+        print("First-time authentication — follow the prompt above...")
+        new_record = credential.authenticate(scopes=[_MS_SCOPE])
+        record_path.parent.mkdir(parents=True, exist_ok=True)
+        record_path.write_text(new_record.serialize())
+        print(f"Auth record saved to {record_path}")
+
+    return credential
+
+
+def _ms_graph_get(credential, endpoint: str, *, retries: int = 3) -> dict:
+    """Make an authenticated GET to the Graph API with retry on 429/503."""
+    import httpx
+    import time
+
+    token = credential.get_token(_MS_SCOPE)
+    headers = {"Authorization": f"Bearer {token.token}"}
+
+    delay = 1.0
+    for attempt in range(retries):
+        resp = httpx.get(f"{_MS_GRAPH_BASE}{endpoint}", headers=headers, timeout=30.0)
+        if resp.status_code == 429 or resp.status_code == 503:
+            if attempt < retries - 1:
+                wait = delay
+                retry_after = resp.headers.get("Retry-After")
+                if retry_after and retry_after.isdigit():
+                    wait = max(wait, int(retry_after))
+                print(f"  Rate limited ({resp.status_code}), retrying in {wait}s...")
+                time.sleep(wait)
+                delay *= 2
+                # Refresh token in case it expired during wait
+                token = credential.get_token(_MS_SCOPE)
+                headers = {"Authorization": f"Bearer {token.token}"}
+                continue
+            resp.raise_for_status()
+        resp.raise_for_status()
+        return resp.json()
+
+    raise RuntimeError("Graph API request failed after retries")
+
 
 def import_microsoft_todo(full: bool) -> int:
-    """Stub: requires az CLI auth or app registration.
+    """Import tasks from Microsoft To-Do via the Graph API.
 
-    For a production setup, install azure-identity + msgraph-core and implement:
-        credential = AzureCliCredential()
-        token = credential.get_token("https://graph.microsoft.com/.default")
-        # fetch /me/todo/lists, then /me/todo/lists/{id}/tasks
+    Uses device-code flow authentication (no app registration required).
+    Run `uv run import_tasks.py --test-auth` to verify auth before first sync.
     """
-    print("Microsoft To-Do import not implemented in this template.")
-    print("See SKILL.md for setup instructions.")
-    print("The easiest path: `az login`, then extend this script to call the Graph API.")
-    return 0
+    import time
+
+    credential = _get_ms_credential()
+
+    # Fetch all task lists
+    lists_resp = _ms_graph_get(credential, "/me/todo/lists")
+    task_lists = lists_resp.get("value", [])
+    print(f"  Found {len(task_lists)} task lists")
+
+    conn = open_db()
+    imported = 0
+
+    for tl in task_lists:
+        list_id = tl["id"]
+        list_name = tl.get("displayName", "")
+        time.sleep(0.1)  # Respect rate limits
+
+        try:
+            tasks_resp = _ms_graph_get(credential, f"/me/todo/lists/{list_id}/tasks")
+        except Exception as exc:
+            print(f"  Warning: failed to fetch list '{list_name}': {exc}")
+            continue
+
+        for t in tasks_resp.get("value", []):
+            # Map Microsoft status → normalised status
+            ms_status = t.get("status", "notStarted")
+            if ms_status == "completed":
+                status = "done"
+            else:
+                status = "open"
+
+            # Extract nested datetime fields
+            due_date = None
+            if t.get("dueDateTime"):
+                due_date = t["dueDateTime"].get("dateTime")
+
+            completed_at = None
+            if t.get("completedDateTime"):
+                completed_at = t["completedDateTime"].get("dateTime")
+
+            body = ""
+            if t.get("body"):
+                body = t["body"].get("content", "")
+
+            upsert(conn, {
+                "id": f"ms-todo:{t['id']}",
+                "title": t.get("title", ""),
+                "body": body,
+                "status": status,
+                "list_name": list_name,
+                "created_at": t.get("createdDateTime"),
+                "completed_at": completed_at,
+                "due_date": due_date,
+                "provider": "microsoft-todo",
+                "raw_json": json.dumps(t),
+            })
+            imported += 1
+
+    conn.commit()
+    conn.close()
+    return imported
 
 
 # ---------- Things 3 ----------
@@ -204,12 +344,37 @@ PROVIDERS = {
 }
 
 
+def test_ms_auth() -> int:
+    """Test Microsoft Graph authentication and list available task lists."""
+    try:
+        credential = _get_ms_credential()
+        resp = _ms_graph_get(credential, "/me/todo/lists")
+        lists = resp.get("value", [])
+        print(f"Authentication successful — {len(lists)} task lists:")
+        for tl in lists:
+            print(f"  - {tl.get('displayName', '(unnamed)')}")
+        return 0
+    except Exception as exc:
+        print(f"Authentication failed: {exc}")
+        print("\nTroubleshooting:")
+        print("  1. Run: az login")
+        print("  2. Or delete auth record and re-authenticate:")
+        print(f"     rm {_ms_auth_record_path()}")
+        return 1
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--full", action="store_true")
+    parser.add_argument("--test-auth", action="store_true",
+                        help="Test Microsoft Graph authentication")
     args = parser.parse_args()
 
     load_config()
+
+    if args.test_auth:
+        return test_ms_auth()
+
     if not source_enabled("tasks"):
         print("Tasks source not enabled.")
         return 1

@@ -3,43 +3,40 @@
 {% if task_provider == 'microsoft-todo' -%}
 ## Microsoft To-Do
 
-Microsoft To-Do syncs via the Graph API. The easiest path is Azure CLI auth.
+Microsoft To-Do syncs via the Graph API using device-code flow authentication.
+No app registration required — the script uses Microsoft's public CLI client ID.
 
-### 1. Install Azure CLI
-
-```bash
-brew install azure-cli   # macOS
-```
-
-### 2. Authenticate
+### 1. Test authentication
 
 ```bash
-az login
+uv run .claude/skills/tasks-import/import_tasks.py --test-auth
 ```
 
-This opens a browser, you sign in with the same Microsoft account that holds your To-Do tasks.
+On first run this opens a browser sign-in prompt (device code flow). Follow the
+instructions in the terminal. After authenticating, the token is cached in the
+macOS Keychain and an auth record is saved to `data/ms_auth_record.json` for
+silent re-authentication on future runs.
 
-### 3. First sync
+### 2. First sync
 
 ```bash
 uv run .claude/skills/tasks-import/import_tasks.py
 ```
 
-⚠️ The template ships with a **stub implementation** for Microsoft To-Do. Full Graph API integration requires `azure-identity` + `msgraph-core`. See the SKILL.md and inline TODO in `import_tasks.py` for extension guidance, or reference the original Claude-Vault `todo-import` skill.
+### 3. Inspect
 
-### Alternative: App Registration (non-interactive)
+```bash
+sqlite3 data/tasks.db
+> SELECT title, status, due_date FROM tasks WHERE provider='microsoft-todo' ORDER BY due_date;
+```
 
-For launchd-scheduled syncs without interactive login:
+### Troubleshooting
 
-1. https://portal.azure.com → **App registrations** → **New registration**
-2. Add permission: Microsoft Graph → Delegated → `Tasks.Read`
-3. Grant admin consent (or have your IT admin do so)
-4. Copy the Application (client) ID and Directory (tenant) ID
-5. Add to `.env`:
-   ```
-   AZURE_CLIENT_ID=...
-   AZURE_TENANT_ID=...
-   ```
+- **Token expired / auth failure**: delete `data/ms_auth_record.json` and
+  re-run `--test-auth` to re-authenticate.
+- **Azure CLI alternative**: if you prefer `az login` over device-code flow,
+  you can register your own app and set `AZURE_CLIENT_ID` / `AZURE_TENANT_ID`
+  in `.env`.
 
 {% elif task_provider == 'todoist' -%}
 ## Todoist
