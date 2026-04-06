@@ -120,4 +120,4 @@ MIT — see [LICENSE](LICENSE).
 
 ## Credits
 
-Extracted from [Claude-Vault](https://github.com/shippy/Claude-Vault) by [Simon Podhajsky](https://simon.podhajsky.net). The "cognitive exhaust fumes" framing comes from a [talk at ai.engineer/europe 2026](https://slides.podhajsky.net/read-only-ai).
+By [Simon Podhajsky](https://simon.podhajsky.net). The "cognitive exhaust fumes" framing comes from a [talk at ai.engineer/europe 2026](https://slides.podhajsky.net/read-only-ai).
