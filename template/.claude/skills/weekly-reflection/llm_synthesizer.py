@@ -109,14 +109,14 @@ Data source weighting:
 - **Browser tabs** are LOW signal. Tabs accumulate over weeks/months. Don't treat tab counts as evidence of attention.
 - **Email is a partial window only.** Most real communication happens elsewhere (Slack, messaging). Don't overweight email.
 - **Notes vault** notes are strong signals when modified recently — they represent processed thought.
-- **Git commits** show concrete output. Commit subjects reveal what was actually built. Co-authorship with Claude indicates AI-assisted work. Repos with many commits reveal where energy went.
+- **Git commits** show concrete output. Commit subjects reveal what was actually built. Repos with many commits reveal where energy went.
 
 Guidelines:
 - Be conversational and narrative, not statistical
 - Use specific evidence from the data (quote journal entries, task titles, email subjects)
 - Focus on what the data reveals about priorities, focus, and patterns
 - Detect cross-source patterns (same topic in journal + tasks + notes = strong signal)
-- Be honest about intention-reality gaps without judgment
+- Be honest about intention-reality gaps without judgment — but check dates before flagging. A task created today that isn't done yet is not a gap; only flag tasks that have been open long enough to represent genuine inaction
 - Make observations that help the person think, not just summarize
 
 Tone: Thoughtful, direct, curious. Like a smart friend reviewing the week with you."""
@@ -157,7 +157,10 @@ and technical work."""
                 for t in tasks[:15]:
                     if self.redact and self._is_redacted(t.title + (t.body or "")):
                         continue
-                    ctx += f"- {t.title} ({t.list_name})\n"
+                    detail = t.list_name or ""
+                    if t.created:
+                        detail += f", created {t.created[:10]}" if detail else f"created {t.created[:10]}"
+                    ctx += f"- {t.title} ({detail})\n" if detail else f"- {t.title}\n"
                 ctx += "\n"
 
         if any(text.emails.values()):
@@ -199,16 +202,9 @@ and technical work."""
             for repo, commits in sorted(by_repo.items(), key=lambda x: -len(x[1])):
                 total_add = sum(c.insertions for c in commits)
                 total_del = sum(c.deletions for c in commits)
-                co_count = sum(1 for c in commits if c.co_authors)
-                ctx += f"**{repo}** ({len(commits)} commits, +{total_add}/-{total_del}"
-                if co_count:
-                    ctx += f", {co_count} co-authored"
-                ctx += "):\n"
+                ctx += f"**{repo}** ({len(commits)} commits, +{total_add}/-{total_del}):\n"
                 for c in commits[:15]:
-                    line = f"- {c.subject}"
-                    if c.co_authors:
-                        line += f" [with {', '.join(c.co_authors)}]"
-                    ctx += line + "\n"
+                    ctx += f"- {c.subject}\n"
                 if len(commits) > 15:
                     ctx += f"- ... and {len(commits) - 15} more\n"
                 ctx += "\n"
