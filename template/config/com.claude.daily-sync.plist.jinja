@@ -10,8 +10,8 @@
         <string>/opt/homebrew/bin/uv</string>
         <string>run</string>
         <string>--env-file</string>
-        <string>{{ _copier_conf.dst_path | string }}/.env</string>
-        <string>{{ _copier_conf.dst_path | string }}/.claude/skills/data-sync/sync_all.py</string>
+        <string>{{ vault_path }}/.env</string>
+        <string>{{ vault_path }}/.claude/skills/data-sync/sync_all.py</string>
         <string>--yes</string>
     </array>
 
@@ -24,13 +24,13 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>{{ _copier_conf.dst_path | string }}</string>
+    <string>{{ vault_path }}</string>
 
     <key>StandardOutPath</key>
-    <string>{{ _copier_conf.dst_path | string }}/logs/sync-stdout.log</string>
+    <string>{{ vault_path }}/logs/sync-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>{{ _copier_conf.dst_path | string }}/logs/sync-stderr.log</string>
+    <string>{{ vault_path }}/logs/sync-stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

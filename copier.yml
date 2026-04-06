@@ -45,6 +45,11 @@ owner_name:
   help: "Your name (used throughout CLAUDE.md — e.g., 'Alex', 'Jordan')"
   default: "you"
 
+vault_path:
+  type: str
+  help: "Absolute path where this vault lives (used in launchd plists and scheduled tasks)"
+  default: "~/Documents/{{ vault_name | lower | replace(' ', '-') }}"
+
 # ============================================================
 # Notes / Knowledge Base
 # ============================================================

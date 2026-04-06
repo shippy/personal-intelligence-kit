@@ -10,8 +10,8 @@
         <string>/opt/homebrew/bin/uv</string>
         <string>run</string>
         <string>--env-file</string>
-        <string>{{ _copier_conf.dst_path | string }}/.env</string>
-        <string>{{ _copier_conf.dst_path | string }}/.claude/skills/weekly-reflection/weekly_reflection.py</string>
+        <string>{{ vault_path }}/.env</string>
+        <string>{{ vault_path }}/.claude/skills/weekly-reflection/weekly_reflection.py</string>
     </array>
 
     <key>StartCalendarInterval</key>
@@ -25,13 +25,13 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>{{ _copier_conf.dst_path | string }}</string>
+    <string>{{ vault_path }}</string>
 
     <key>StandardOutPath</key>
-    <string>{{ _copier_conf.dst_path | string }}/logs/reflect-stdout.log</string>
+    <string>{{ vault_path }}/logs/reflect-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>{{ _copier_conf.dst_path | string }}/logs/reflect-stderr.log</string>
+    <string>{{ vault_path }}/logs/reflect-stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
