@@ -11,7 +11,6 @@ _skip_if_exists:
   - "working/**"
 
 _exclude:
-  - "copier.yml"
   - "~*"
   - "__pycache__"
   - "*.py[co]"
