@@ -176,36 +176,35 @@ class TextExtractor:
             sent, received = [], []
             name_lower = owner_name().lower()
 
-            for msg_id in message_ids[:50]:
+            for msg_id in message_ids[:200]:
                 r = subprocess.run(
                     ["notmuch", "show", "--format=json", f"id:{msg_id}"],
                     capture_output=True, text=True, timeout=10,
                 )
                 if r.returncode != 0:
                     continue
-                data = json.loads(r.stdout)
-                for thread in data:
-                    for message in thread:
-                        if isinstance(message, list):
-                            for msg in message:
-                                if isinstance(msg, dict) and "headers" in msg:
-                                    headers = msg["headers"]
-                                    body = msg.get("body", [{}])
-                                    snippet = ""
-                                    if body and isinstance(body, list) and body[0]:
-                                        snippet = str(body[0].get("content", ""))[:300]
-                                    email = Email(
-                                        subject=headers.get("Subject", "(no subject)"),
-                                        sender=headers.get("From", ""),
-                                        recipient=headers.get("To", ""),
-                                        date=headers.get("Date", ""),
-                                        snippet=snippet,
-                                        thread_id=msg_id,
-                                    )
-                                    if name_lower in headers.get("From", "").lower():
-                                        sent.append(email)
-                                    else:
-                                        received.append(email)
+                # notmuch show returns the full thread tree; extract only
+                # the message matching our searched ID to avoid duplication.
+                msg = self._find_message_in_thread(json.loads(r.stdout), msg_id)
+                if not msg:
+                    continue
+                headers = msg["headers"]
+                body = msg.get("body", [{}])
+                snippet = ""
+                if body and isinstance(body, list) and body[0]:
+                    snippet = str(body[0].get("content", ""))[:300]
+                email = Email(
+                    subject=headers.get("Subject", "(no subject)"),
+                    sender=headers.get("From", ""),
+                    recipient=headers.get("To", ""),
+                    date=headers.get("Date", ""),
+                    snippet=snippet,
+                    thread_id=msg_id,
+                )
+                if name_lower in headers.get("From", "").lower():
+                    sent.append(email)
+                else:
+                    received.append(email)
 
             print(f"  ✓ {len(sent)} sent, {len(received)} received")
             return {"sent": sent, "received": received}
@@ -215,6 +214,19 @@ class TextExtractor:
         except Exception as e:
             print(f"  ⚠ Email extraction failed: {e}")
             return {"sent": [], "received": []}
+
+    @staticmethod
+    def _find_message_in_thread(data, target_id: str) -> Optional[dict]:
+        """Walk the notmuch thread tree and return only the message with the target ID."""
+        stack = list(data)
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict) and "id" in node:
+                if node["id"] == target_id:
+                    return node
+            elif isinstance(node, list):
+                stack.extend(node)
+        return None
 
     def extract_notes(self) -> List[VaultNote]:
         """Extract recently modified notes from the notes vault."""
