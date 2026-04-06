@@ -202,6 +202,7 @@ When running batch processes, surface:
 - **Never quote personal messages directly** — summarize, paraphrase
 - **Note data staleness** — if a source is old, flag it
 - **Always read `vault.toml` first** — don't assume sources are enabled
+- **Fix skills upstream** — this vault is generated from a copier template. Substantial bug fixes or improvements to skills, schemas, or config should be made in the template repo, not here. Quick one-off patches are fine, but anything worth keeping belongs upstream so it survives the next `copier update`.
 
 ### When Uncertain
 - Confidence <70% about classification → ask before acting
