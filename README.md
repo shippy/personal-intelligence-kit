@@ -1,88 +1,123 @@
-# Personal Intelligence Kit
+<p align="center">
+  <img src="docs/images/brain-smoke.png" width="280" alt="Cognitive exhaust fumes — colorful thought traces rising from a silhouette" />
+</p>
 
-A [copier](https://copier.readthedocs.io) template that scaffolds a **personal intelligence system** for [Claude Code](https://claude.com/claude-code).
+<h1 align="center">Personal Intelligence Kit</h1>
 
-Your own back-office — ingesting email, browser, journal, tasks, and notes, then surfacing patterns and writing coaching across them. No central app. No cloud. Claude Code is the runtime; `vault.toml` is the config; skills do the work.
+<p align="center">
+  A read-only AI system that watches your digital exhaust and tells you what the engine is actually doing.
+</p>
+
+<p align="center">
+  <a href="https://copier.readthedocs.io">copier template</a> &middot;
+  powered by <a href="https://claude.com/claude-code">Claude Code</a> &middot;
+  MIT license
+</p>
+
+---
+
+Every email you send, tab you open, task you create and abandon, journal entry you write — that's the **exhaust** from your thinking. Individually, each source is noise. Analyzed together, they reveal the engine.
+
+Personal Intelligence Kit scaffolds a local vault that ingests your data sources, normalizes them into SQLite, and runs cross-source analysis skills via Claude Code. It **never writes back** to your primary data. All output lands in a separate directory for you to review.
+
+<p align="center">
+  <img src="docs/images/data-flow-diagram.png" width="680" alt="Architecture: read-only sources → Claude Code analysis workspace → outputs" />
+</p>
+
+## What the Exhaust Reveals
+
+| Pattern | Sources Crossed | Example |
+|---------|----------------|---------|
+| **Intention-action gaps** | journal + tasks + notes | "You journaled about writing that blog post three times. You haven't opened the draft once." |
+| **Attention drift** | browser + tasks + git | "Your commits shifted from project A to project B mid-week. Project A's deadline is Friday." |
+| **Relationship decay** | email + contacts + journal | "You haven't emailed this collaborator in 6 weeks. Last time, you said you'd follow up." |
+| **Topic convergence** | browser + notes + journal | "Three sources mention eval frameworks this week — and two people in your network work on this." |
+
+No single source tells you any of this. The cross-source signal is the product.
 
 ## What You Get
 
 A generated vault with:
 
-- **`CLAUDE.md`** — opinionated system prompt that turns Claude Code into a personal intelligence agent
-- **`vault.toml`** — runtime config (data sources, paths)
-- **`.claude/skills/`** — a curated set of skills that read `vault.toml`:
-  - `cross-source-queries` — intention↔reality gaps, commitment accountability, topic convergence
-  - `weekly-reflection` — qualitative narrative from all sources
-  - `data-sync` — parallel sync orchestrator
-  - `draft-coach`, `stale-drafts` — writing coaching (if you have a notes vault)
-  - `email-ingest`, `email-analyzer` — mbsync + notmuch wrapper (if you enable email)
-  - `browser-ingest`, `session-analyzer` — Chromium history & tab health (if you enable browser)
-  - `journal-ingest` — Rosebud / Day One / markdown journals (if you enable journaling)
-  - `tasks-import` — Todoist / Microsoft To-Do / Things 3 (if you enable tasks)
-- **`config/`** — launchd / cron templates for scheduled syncs
-- **`.mcp.json`** — MCP server config (e.g. Clay.earth for contacts)
+```
+my-vault/
+├── CLAUDE.md              # System prompt — turns Claude Code into a personal intelligence agent
+├── vault.toml             # Runtime config — single source of truth for sources & paths
+├── .claude/skills/        # Analysis & ingest skills
+│   ├── weekly-reflection/ # Qualitative narrative from all sources (LLM-powered)
+│   ├── cross-source-queries/ # Intention gaps, commitment tracking, convergence
+│   ├── data-sync/         # Parallel sync orchestrator
+│   ├── email-ingest/      # mbsync + notmuch
+│   ├── browser-ingest/    # Chromium history & session state
+│   ├── journal-ingest/    # Rosebud / Day One / markdown
+│   ├── tasks-import/      # Todoist / Microsoft To-Do / Things 3
+│   ├── git-stats/         # Cross-repo commit tracking
+│   ├── draft-coach/       # Socratic writing assistance
+│   └── stale-drafts/      # Draft queue ranking
+├── output/                # All AI-generated deliverables land here
+├── data/                  # Normalized SQLite databases
+├── config/                # launchd / cron templates for scheduled runs
+└── logs/activity.md       # Append-only audit trail
+```
 
-Everything is **read-only against your real data**. Outputs go to the vault's `output/` directory.
-
-## Prerequisites
-
-- **[copier](https://copier.readthedocs.io):** `uv tool install copier` or `pipx install copier`
-- **[uv](https://docs.astral.sh/uv/):** for the Python-based skills (`brew install uv`)
-- **[Claude Code](https://claude.com/claude-code):** the runtime
-- **Optional per source:** `mbsync` + `notmuch` for email, Full Disk Access for browser history, etc.
+Skills read `vault.toml` and skip disabled sources gracefully. Enable what you use, ignore the rest.
 
 ## Quickstart
 
 ```bash
-copier copy gh:simonpodhajsky/personal-intelligence-kit ~/my-vault
+# Install prerequisites
+brew install uv
+uv tool install copier
+
+# Generate your vault
+copier copy gh:shippy/personal-intelligence-kit ~/my-vault
 cd ~/my-vault
+
+# Start Claude Code
 claude
 ```
 
-Then ask: `"What data sources do I have?"` — Claude will read `vault.toml` and answer.
+Then ask: *"Read vault.toml and list my enabled data sources."*
 
-## Philosophy
+Copier will prompt you to choose which sources to enable, where your data lives, and which task manager you use. Everything is reconfigurable after generation via `vault.toml`.
 
-- **Infrastructure, not a chatbot.** This vault is the back-office of your brain. It doesn't chat; it indexes, correlates, and surfaces.
-- **Narrow write zone.** The vault never writes to your notes, email, or any primary data. All output goes to `output/`.
-- **Claude Code is the runtime.** No Python CLI to install, no FastAPI server, no cron daemon. Just skills that Claude runs.
-- **Opinionated defaults.** The generated `CLAUDE.md` is long and specific on purpose. Delete what you don't like — it's your vault.
-- **Skills read `vault.toml`.** You can edit it post-generation to enable/disable sources. Skills skip missing sources gracefully.
+## Data Sources
 
-## What This Is Not
+| Source | Integration | Auth |
+|--------|------------|------|
+| **Email** | mbsync (IMAP) + notmuch indexing | IMAP credentials in `~/.mbsyncrc` |
+| **Journal** | Rosebud, Day One, or plain markdown | File path |
+| **Browser** | Vivaldi, Chrome, Brave, Edge (auto-detected) | Full Disk Access (macOS) |
+| **Tasks** | Microsoft To-Do (Graph API), Todoist, Things 3 | Device code flow / API token / local DB |
+| **Notes** | Obsidian, Logseq, or plain markdown | File path (read-only) |
+| **Git** | Commit stats across repos with co-author detection | Local repos |
+| **Contacts** | Clay.earth via MCP | API key |
 
-- A note-taking app (you already have one — this vault references it)
-- A task manager (ditto)
-- An autonomous agent (it runs when you invoke it, not in the background beyond scheduled syncs)
-- A SaaS product (it's yours, on your machine)
+## Design Principles
 
-## Customizing After Generation
+**Read-only against your real data.** The vault never writes to your notes, email, tasks, or any primary source. This isn't a limitation — it's the point. Read-only means the AI analyzes authentic traces of your cognition, not its own output. And when it's wrong, the cost is zero: you just ignore it.
 
-The template is a starting point. After `copier copy`:
+**Claude Code is the runtime.** No Python CLI to install, no web server, no daemon. Skills are Python scripts that Claude Code runs on demand or on a schedule. `vault.toml` is the config. That's the whole architecture.
 
-- **Add skills:** drop new directories into `.claude/skills/`
-- **Change sources:** edit `vault.toml`, re-run skills
-- **Tweak the brain:** edit `CLAUDE.md` freely
-- **Re-run the template:** `copier update` in the generated vault to pull in template changes
+**Skills, not one monolithic prompt.** Each analysis capability is a separate skill with its own `SKILL.md`, dependencies, and data contracts. They compose through normalized SQLite databases — ingest skills write to them, analysis skills read from them.
 
-## Verification After Generation
+**Local-first, cloud-analyzed.** Your data stays on your machine. Analysis goes through the Anthropic API. This is a deliberate trade-off: cross-source LLM synthesis requires a capable model. As local models improve, the architecture supports swapping in a local provider.
+
+## Updating
+
+Pull template improvements into an existing vault:
 
 ```bash
 cd ~/my-vault
-# 1. Structure
-tree -L 2
-
-# 2. Ask Claude
-claude "Read vault.toml and list my enabled data sources."
-
-# 3. First sync (once credentials are set up)
-uv run .claude/skills/data-sync/sync_all.py --yes
+copier update --vcs-ref=v0.4.4
 ```
+
+This re-renders templates and merges changes. Your `output/`, `data/`, `logs/`, and `.env` are preserved across updates.
 
 ## License
 
-MIT — see LICENSE.
+MIT — see [LICENSE](LICENSE).
 
 ## Credits
 
-Extracted from [Claude-Vault](https://github.com/simonpodhajsky/Claude-Vault), a personal intelligence system by [Šimon Podhajský](https://simon.podhajsky.net).
+Extracted from [Claude-Vault](https://github.com/shippy/Claude-Vault) by [Simon Podhajsky](https://simon.podhajsky.net). The "cognitive exhaust fumes" framing comes from a [talk at ai.engineer/europe 2026](https://slides.podhajsky.net/read-only-ai).
