@@ -47,7 +47,7 @@ try:
     from pydantic_ai.providers.anthropic import AnthropicProvider
     from pydantic_ai.models.anthropic import AnthropicModel
     from pydantic_ai.providers.openai import OpenAIProvider
-    from pydantic_ai.models.openai import OpenAIModel
+    from pydantic_ai.models.openai import OpenAIChatModel
     _HAS_PYDANTIC_AI = True
 except ImportError:
     _HAS_PYDANTIC_AI = False
@@ -356,7 +356,7 @@ class LLMAssessor:
                 provider=AnthropicProvider(api_key=api_key),
             )
         if api_key := os.getenv("OPENAI_API_KEY"):
-            return OpenAIModel(
+            return OpenAIChatModel(
                 model_name="gpt-5.4",
                 provider=OpenAIProvider(api_key=api_key),
             )
