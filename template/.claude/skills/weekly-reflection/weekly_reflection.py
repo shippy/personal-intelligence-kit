@@ -47,42 +47,8 @@ class WeeklyReflectionOrchestrator:
                 "Set it to enable LLM synthesis."
             )
 
-        self.stats_review_path = self._find_latest_stats_review()
         self.text_extractor = TextExtractor(days_back=7)
         self.synthesizer = ReflectionSynthesizer(api_key=api_key, redact=redact)
-
-    def _find_latest_stats_review(self) -> Path | None:
-        """Find most recent statistical weekly review (optional)."""
-        reviews_dir = output_dir("root") / "reviews"
-        if not reviews_dir.exists():
-            return None
-        reviews = sorted(reviews_dir.glob("*-weekly-review.md"), reverse=True)
-        if reviews:
-            print(f"✓ Found statistical review: {reviews[0].name}")
-            return reviews[0]
-        return None
-
-    def _load_stats(self) -> dict:
-        if not self.stats_review_path:
-            return {}
-        try:
-            content = self.stats_review_path.read_text()
-            stats = {}
-            lines = content.split("\n")
-            in_stats = False
-            for line in lines:
-                if "Stats" in line and line.startswith("#"):
-                    in_stats = True
-                    continue
-                if in_stats:
-                    if line.startswith("#") or line.startswith("→"):
-                        break
-                    if line.startswith("-") and ":" in line:
-                        key, value = line.lstrip("- ").split(":", 1)
-                        stats[key.strip()] = value.strip()
-            return stats
-        except Exception:
-            return {}
 
     def run(self) -> Path:
         print("=" * 60)
@@ -93,23 +59,16 @@ class WeeklyReflectionOrchestrator:
         print("\n=== Phase 1: Text Extraction ===")
         weekly_text = self.text_extractor.extract_all()
 
-        # Phase 2: Load statistics (optional)
-        print("\n=== Phase 2: Loading Statistics ===")
-        stats = self._load_stats()
-        print(f"✓ Loaded {len(stats)} statistics" if stats else "No statistical review found (proceeding without)")
-
-        # Phase 3: Synthesize with LLM
-        print("\n=== Phase 3: LLM Synthesis ===")
-        reflection = self.synthesizer.synthesize(weekly_text, stats)
+        # Phase 2: Synthesize with LLM
+        print("\n=== Phase 2: LLM Synthesis ===")
+        reflection = self.synthesizer.synthesize(weekly_text)
         print(f"✓ {len(reflection.themes)} themes, {len(reflection.tensions)} tensions, "
               f"{len(reflection.reflection_questions)} questions")
 
-        # Phase 4: Format and save
-        print("\n=== Phase 4: Output ===")
-        formatter = ReflectionFormatter(
-            str(self.stats_review_path) if self.stats_review_path else None
-        )
-        markdown = formatter.format(reflection, stats)
+        # Phase 3: Format and save
+        print("\n=== Phase 3: Output ===")
+        formatter = ReflectionFormatter()
+        markdown = formatter.format(reflection)
         out = output_dir("reflections")
         output_path = formatter.save(markdown, out)
         print(f"✓ Saved: {output_path}")

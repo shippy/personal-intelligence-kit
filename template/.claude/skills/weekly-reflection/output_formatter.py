@@ -15,13 +15,12 @@ from llm_synthesizer import WeeklyReflection
 
 
 class ReflectionFormatter:
-    def __init__(self, stats_review_path: str | None = None):
-        self.stats_review_path = Path(stats_review_path) if stats_review_path else None
+    def __init__(self):
         self.review_date = datetime.now().strftime("%Y-%m-%d")
 
-    def format(self, reflection: WeeklyReflection, stats: dict) -> str:
-        md = self._frontmatter(stats)
-        md += self._opening(reflection, stats)
+    def format(self, reflection: WeeklyReflection) -> str:
+        md = self._frontmatter()
+        md += self._opening(reflection)
         md += self._themes(reflection)
         md += self._tensions(reflection)
         md += self._commitments(reflection)
@@ -30,22 +29,16 @@ class ReflectionFormatter:
         md += self._footer()
         return md
 
-    def _frontmatter(self, stats: dict) -> str:
-        sources = stats.get("sources", ["journal", "notes", "email", "browser", "tasks"])
-        sources_str = ", ".join(sources) if isinstance(sources, list) else str(sources)
-        stats_link = ""
-        if self.stats_review_path:
-            stats_link = f"\nstats_from: [[reviews/{self.stats_review_path.stem}]]"
+    def _frontmatter(self) -> str:
         return f"""---
 created: {self.review_date}
 type: reflection
 status: final
-sources: [{sources_str}]{stats_link}
 ---
 
 """
 
-    def _opening(self, reflection: WeeklyReflection, stats: dict) -> str:
+    def _opening(self, reflection: WeeklyReflection) -> str:
         return f"""# Weekly Reflection — {self.review_date}
 
 > "{reflection.opening_observation}"
@@ -102,12 +95,9 @@ sources: [{sources_str}]{stats_link}
         return md
 
     def _footer(self) -> str:
-        link = ""
-        if self.stats_review_path:
-            link = f"\n\n*For pure stats, see [[reviews/{self.stats_review_path.stem}]]*"
-        return f"""---
+        return """---
 
-*This reflection is generated from actual text from your week.*{link}
+*This reflection is generated from actual text from your week.*
 """
 
     def save(self, content: str, out_dir: Path | None = None) -> Path:

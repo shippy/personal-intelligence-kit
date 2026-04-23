@@ -133,13 +133,8 @@ and technical work."""
         lower = text.lower()
         return any(kw in lower for kw in REDACT_KEYWORDS)
 
-    def _prepare_context(self, text: WeeklyText, stats: dict) -> str:
+    def _prepare_context(self, text: WeeklyText) -> str:
         ctx = "# Weekly Data\n\n"
-
-        if stats:
-            ctx += "## Statistics\n\n"
-            for k, v in stats.items():
-                ctx += f"- {k}: {v}\n"
 
         if text.journal_entries:
             ctx += "\n## Journal Entries\n\n"
@@ -211,9 +206,9 @@ and technical work."""
 
         return ctx
 
-    def synthesize(self, text: WeeklyText, stats: dict) -> WeeklyReflection:
+    def synthesize(self, text: WeeklyText) -> WeeklyReflection:
         print(f"\nSynthesizing with Claude (pydantic-ai)...")
-        context = self._prepare_context(text, stats)
+        context = self._prepare_context(text)
         result = self.agent.run_sync(context)
         print("✓ Synthesis complete")
         return result.output
