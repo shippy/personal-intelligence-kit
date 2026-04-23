@@ -7,7 +7,7 @@ description: Cross-source analysis for detecting patterns across data sources. I
 
 Analysis tools that detect patterns across multiple data sources. Each analysis reads `vault.toml` to discover which sources are enabled and skips missing ones gracefully.
 
-All three analyses use **regex-based heuristics by default** (no LLM required). Each file has `EXTENSION POINT` comments marking where to add LLM calls for higher-quality extraction.
+The intention-reality analysis uses an **LLM (Claude Sonnet or GPT) for semantic goal assessment** against weekly reflections when `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) is set, and falls back to regex heuristics otherwise. The other two analyses use **regex-based heuristics** and have `EXTENSION POINT` comments marking where to add LLM calls.
 
 ## Invocation
 
@@ -25,18 +25,17 @@ Or via Claude Code: `batch: cross-source-queries`
 
 ### 1. Intention ↔ Reality Gaps (`intention_reality_gaps.py`)
 
-Compare stated intentions vs actual behavior.
+Compare stated yearly goals vs actual behavior, primarily via weekly reflections.
 
 **What it does:**
-- Finds goal files in notes vault (e.g., "2026 Goals.md")
-- Extracts unchecked goals via regex
-- Cross-references with notes vault activity, email (notmuch), tasks (tasks.db)
-- Queries journal.db `intentions` table for recent stated intentions
-- Flags goals with zero evidence
+- Finds goal files in notes vault (e.g., "2026 Goals.md") and parses them structurally (sections, sub-goals, checkbox/strikethrough state)
+- **LLM path** (when `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is set): feeds the goals, all weekly reflections in `output/reflections/`, and supplementary keyword-match signals into a single LLM call that classifies each goal as `active` / `stale` / `neglected` / `completed` / `postponed`
+- **Heuristic fallback** (no API key): keyword-matches each goal against notes, email, and tasks — noisy but runs offline
+- Appends recent intentions from `journal.db`
 
 **Output:** `output/reports/intention-reality-YYYY-MM-DD.md`
 
-**Data sources:** notes vault, journal.db, tasks.db, email (notmuch)
+**Data sources:** notes vault, `output/reflections/`, journal.db, tasks.db, email (notmuch)
 
 ### 2. Commitment Accountability (`commitment_accountability.py`)
 
@@ -65,11 +64,11 @@ Detect topics and people appearing across multiple unrelated sources.
 
 ## Data Source Matrix
 
-| Analysis | Journal DB | Notes Vault | Browser DB | Email | Tasks DB |
-|----------|-----------|-------------|-----------|-------|---------|
-| Intention-reality | ✓ (intentions) | ✓ (goals) | — | optional | optional |
-| Commitments | — | — | — | **required** | — |
-| Convergence | ✓ (topics, people) | ✓ (topics, people) | ✓ (titles) | ✓ (subjects) | — |
+| Analysis | Journal DB | Notes Vault | Reflections | Browser DB | Email | Tasks DB |
+|----------|-----------|-------------|-------------|-----------|-------|---------|
+| Intention-reality | ✓ (intentions) | ✓ (goals) | ✓ (primary evidence) | — | optional | optional |
+| Commitments | — | — | — | — | **required** | — |
+| Convergence | ✓ (topics, people) | ✓ (topics, people) | — | ✓ (titles) | ✓ (subjects) | — |
 
 ## Extension Points
 
