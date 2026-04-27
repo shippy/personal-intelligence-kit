@@ -1,9 +1,9 @@
 """
 LLM Synthesizer for Weekly Reflection
 
-Uses Claude via pydantic-ai to generate qualitative insights from weekly
-text data. Produces structured output: themes, tensions, commitments,
-notable moments, and reflection questions.
+Uses OpenAI (GPT-5.5 with fallback to GPT-5.4) via pydantic-ai to generate
+qualitative insights from weekly text data. Produces structured output:
+themes, tensions, commitments, notable moments, and reflection questions.
 """
 
 import os
@@ -13,8 +13,11 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
-from pydantic_ai.providers.anthropic import AnthropicProvider
-from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.models.openai import OpenAIChatModel
+
+PRIMARY_MODEL = "gpt-5.5"
+FALLBACK_MODEL = "gpt-5.4"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import owner_name  # noqa: E402
@@ -59,7 +62,9 @@ class WeeklyReflection(BaseModel):
         description="Opening narrative observation about the week (2-3 sentences, conversational)"
     )
     themes: List[Theme] = Field(description="2-4 main themes of the week")
-    tensions: List[Tension] = Field(description="1-3 tensions or conflicts")
+    tensions: List[Tension] = Field(
+        description="0-3 tensions or conflicts. Return an empty list when the week's data shows no genuine tension — do not manufacture filler."
+    )
     commitments: List[Commitment] = Field(description="Relationship interactions and commitments")
     notable_moments: List[NotableMoment] = Field(description="2-3 notable moments")
     reflection_questions: List[ReflectionQuestion] = Field(description="3-5 questions for reflection")
@@ -77,17 +82,21 @@ REDACT_KEYWORDS: list[str] = [
 # ── Synthesizer ────────────────────────────────────────────────────
 
 class ReflectionSynthesizer:
-    """Generate qualitative reflections using Claude via pydantic-ai."""
+    """Generate qualitative reflections using OpenAI via pydantic-ai."""
 
     def __init__(self, api_key: Optional[str] = None, redact: bool = False):
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.redact = redact
         if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY (or CLAUDE_API_KEY) not found. Set it in .env or pass to constructor.")
+            raise ValueError("OPENAI_API_KEY not found. Set it in .env or pass to constructor.")
 
-        provider = AnthropicProvider(api_key=self.api_key)
-        model = AnthropicModel(model_name="claude-sonnet-4-6", provider=provider)
-        self.agent = Agent(
+        self.model_name = PRIMARY_MODEL
+        self.agent = self._build_agent(PRIMARY_MODEL)
+
+    def _build_agent(self, model_name: str) -> Agent:
+        provider = OpenAIProvider(api_key=self.api_key)
+        model = OpenAIChatModel(model_name=model_name, provider=provider)
+        return Agent(
             model=model,
             output_type=WeeklyReflection,
             system_prompt=self._system_prompt(),
@@ -116,7 +125,10 @@ Guidelines:
 - Use specific evidence from the data (quote journal entries, task titles, email subjects)
 - Focus on what the data reveals about priorities, focus, and patterns
 - Detect cross-source patterns (same topic in journal + tasks + notes = strong signal)
-- Be honest about intention-reality gaps without judgment — but check dates before flagging. A task created today that isn't done yet is not a gap; only flag tasks that have been open long enough to represent genuine inaction
+- Be honest about intention-reality gaps without judgment, but be conservative about what counts as a gap:
+  - Task due dates are aspirational planning hints, not commitments. A task being "overdue" by a few days is normal — it doesn't mean failure.
+  - Only flag a tension when the gap is corroborated by another source: a journal complaint, a stated intention that went unmet, an unanswered email, a note that names the conflict directly. A bare overdue task is not enough.
+  - When the week mostly went well, it is correct to report zero tensions. Do not invent one to fill the slot.
 - Make observations that help the person think, not just summarize
 
 Tone: Thoughtful, direct, curious. Like a smart friend reviewing the week with you."""
@@ -145,10 +157,15 @@ and technical work."""
 
         if any(text.tasks.values()):
             ctx += "\n## Tasks\n\n"
+            task_headers = {
+                "created": "Created this week:",
+                "completed": "Completed this week:",
+                "overdue": "Stale open tasks (due >14 days ago, any age — these are aspirational due dates, not commitments):",
+            }
             for label, tasks in text.tasks.items():
                 if not tasks:
                     continue
-                ctx += f"**{label.title()} this week:**\n"
+                ctx += f"**{task_headers.get(label, label.title() + ':')}**\n"
                 for t in tasks[:15]:
                     if self.redact and self._is_redacted(t.title + (t.body or "")):
                         continue
@@ -207,8 +224,23 @@ and technical work."""
         return ctx
 
     def synthesize(self, text: WeeklyText) -> WeeklyReflection:
-        print(f"\nSynthesizing with Claude (pydantic-ai)...")
+        print(f"\nSynthesizing with OpenAI {self.model_name} (pydantic-ai)...")
         context = self._prepare_context(text)
-        result = self.agent.run_sync(context)
-        print("✓ Synthesis complete")
+        try:
+            result = self.agent.run_sync(context)
+        except Exception as e:
+            if self.model_name == PRIMARY_MODEL and _is_model_not_found(e):
+                print(f"⚠ {PRIMARY_MODEL} unavailable ({e!s}); falling back to {FALLBACK_MODEL}")
+                self.model_name = FALLBACK_MODEL
+                self.agent = self._build_agent(FALLBACK_MODEL)
+                result = self.agent.run_sync(context)
+            else:
+                raise
+        print(f"✓ Synthesis complete (model: {self.model_name})")
         return result.output
+
+
+def _is_model_not_found(exc: Exception) -> bool:
+    """Heuristic: did OpenAI reject the model name?"""
+    msg = str(exc).lower()
+    return any(s in msg for s in ("model_not_found", "does not exist", "404", "no such model", "invalid model"))

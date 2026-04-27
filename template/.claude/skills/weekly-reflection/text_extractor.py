@@ -161,13 +161,17 @@ class TextExtractor:
             f"SELECT {cols} FROM tasks WHERE DATE(completed_at) >= ? ORDER BY completed_at DESC",
             (self.start_date,),
         )
+        # Only surface tasks that are genuinely stale (>14 days past due).
+        # MS To-Do due dates are aspirational — a task "due yesterday" is normal,
+        # not a tension. We want items that have actually been ignored.
         overdue = _query(
             f"SELECT {cols} FROM tasks WHERE status = 'open' "
-            "AND due_date IS NOT NULL AND DATE(due_date) < DATE('now') ORDER BY due_date ASC",
+            "AND due_date IS NOT NULL AND DATE(due_date) < DATE('now', '-14 days') "
+            "ORDER BY due_date ASC",
         )
         conn.close()
 
-        print(f"  ✓ {len(created)} created, {len(completed)} completed, {len(overdue)} overdue")
+        print(f"  ✓ {len(created)} created, {len(completed)} completed, {len(overdue)} stale (>14d overdue)")
         return {"created": created, "completed": completed, "overdue": overdue}
 
     def extract_emails(self) -> Dict[str, List[Email]]:

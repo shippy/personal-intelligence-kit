@@ -2,8 +2,9 @@
 """
 Qualitative Weekly Reflection
 
-Generates thoughtful narrative reflections from weekly data using Claude
-via pydantic-ai. Complements statistical reviews with qualitative insights.
+Generates thoughtful narrative reflections from weekly data using OpenAI
+(GPT-5.5 with fallback to GPT-5.4) via pydantic-ai. Complements statistical
+reviews with qualitative insights.
 
 Usage:
     cd .claude/skills/weekly-reflection
@@ -38,12 +39,11 @@ class WeeklyReflectionOrchestrator:
         self.review_date = datetime.now().strftime("%Y-%m-%d")
         self.redact = redact
 
-        # ANTHROPIC_API_KEY should be in env via: uv run --env-file .env
-        # Also accepts CLAUDE_API_KEY as alias (avoids conflict with Claude Code's own env)
-        api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
+        # OPENAI_API_KEY should be in env via: uv run --env-file .env
+        api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError(
-                "ANTHROPIC_API_KEY (or CLAUDE_API_KEY) not found in .env file. "
+                "OPENAI_API_KEY not found in .env file. "
                 "Set it to enable LLM synthesis."
             )
 

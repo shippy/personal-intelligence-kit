@@ -29,7 +29,9 @@ uv run --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py
 
 Or via Claude Code: `batch: weekly-reflection`
 
-The `--env-file` flag passes `ANTHROPIC_API_KEY` from `.env` into the subprocess without needing to `source` the file or install `python-dotenv`.
+The `--env-file` flag passes `OPENAI_API_KEY` from `.env` into the subprocess without needing to `source` the file or install `python-dotenv`.
+
+Synthesis uses OpenAI's `gpt-5.5` first, falling back to `gpt-5.4` if the newer model isn't available on the API yet.
 
 ## Workflow
 
