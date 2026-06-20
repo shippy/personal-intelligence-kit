@@ -40,3 +40,36 @@ def render_frontmatter(fields: dict[str, Any]) -> str:
     lines.append("---")
     lines.append("")
     return "\n".join(lines) + "\n"
+
+
+def write_concept(
+    subdir: str,
+    slug: str,
+    *,
+    type: str,
+    title: str,
+    body: str,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    resource: str | None = None,
+    timestamp: str | None = None,
+    **extra: Any,
+) -> Path:
+    """Write an OKF concept document and return its path."""
+    if slug in RESERVED_SLUGS:
+        raise ValueError(f"slug {slug!r} is reserved (index/log)")
+    ts = timestamp or datetime.now().strftime("%Y-%m-%d")
+    target_dir = output_dir("root") / subdir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / f"{slug}.md"
+    fields: dict[str, Any] = {
+        "type": type,
+        "title": title,
+        "description": description,
+        "resource": resource,
+        "tags": tags,
+        "timestamp": ts,
+    }
+    fields.update(extra)
+    path.write_text(render_frontmatter(fields) + body)
+    return path
