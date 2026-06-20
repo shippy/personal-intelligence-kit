@@ -92,3 +92,24 @@ def _append_log(root: Path, date: str, kind: str, title: str) -> None:
         log_path.write_text("\n".join(out) + "\n")
     else:
         log_path.write_text(f"{heading}\n{entry}\n\n" + existing)
+
+
+def link(target: str, text: str) -> str:
+    """Return a bundle-relative absolute markdown link."""
+    if not target.startswith("/"):
+        target = "/" + target
+    return f"[{text}]({target})"
+
+
+def read_frontmatter(path: Any) -> dict[str, Any]:
+    """Parse a concept file's YAML frontmatter into a dict ({} if none).
+    Consumer/test utility — requires PyYAML."""
+    import yaml
+
+    text = Path(path).read_text()
+    if not text.startswith("---\n"):
+        return {}
+    block, sep, _ = text[4:].partition("\n---")
+    if not sep:
+        return {}
+    return yaml.safe_load(block) or {}

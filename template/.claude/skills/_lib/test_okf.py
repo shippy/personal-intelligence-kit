@@ -66,3 +66,18 @@ def test_log_newest_date_first(tmp_path, monkeypatch):
                       timestamp="2026-06-20")
     log = (tmp_path / "log.md").read_text()
     assert log.index("## 2026-06-20") < log.index("## 2026-06-19")
+
+
+def test_link_makes_bundle_relative_absolute():
+    assert okf.link("alerts/foo.md", "Foo") == "[Foo](/alerts/foo.md)"
+    assert okf.link("/reports/bar.md", "Bar") == "[Bar](/reports/bar.md)"
+
+
+def test_read_frontmatter_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    path = okf.write_concept("reports", "r", type="report", title="T",
+                             body="# T\n", tags=["x"], timestamp="2026-06-20")
+    fm = okf.read_frontmatter(path)
+    assert fm["type"] == "report"
+    assert fm["title"] == "T"
+    assert fm["tags"] == ["x"]
