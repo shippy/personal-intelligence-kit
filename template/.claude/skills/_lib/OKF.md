@@ -25,9 +25,10 @@ documents move. Broken links are tolerated by the spec.
 
 ## Reserved files
 
-- **`output/index.md`** — bundle root manifest. The only index file permitted
-  frontmatter, and only to carry `okf_version: "0.1"` (plus optional
-  `title`/`description`). Authored manually.
+- **`output/index.md`** — optional bundle root manifest. The only index file
+  permitted frontmatter, and only to carry `okf_version: "0.1"` (plus optional
+  `title`/`description`). Authored manually if you want one — `output/` is
+  runtime-created local data, so nothing is shipped here by the template.
 - **`output/<subdir>/index.md`** — optional, manual, **no frontmatter**. Body is
   a curated grouped listing. See "Authoring index.md" below.
 - **`output/log.md`** — single root changelog, auto-maintained by
@@ -43,7 +44,8 @@ documents move. Broken links are tolerated by the spec.
 1. Every non-reserved `.md` has parseable YAML frontmatter. ✓ (`write_concept`)
 2. Each frontmatter has a non-empty `type`. ✓ (required argument)
 3. Reserved files (`index.md`, `log.md`) follow their structures. ✓
-4. Root `output/index.md` declares `okf_version`. ✓
+4. (Optional) Root `output/index.md` may declare `okf_version` — OKF says
+   bundles *may* declare it. Add manually if desired; not shipped by default.
 
 ## Authoring index.md (manual)
 
