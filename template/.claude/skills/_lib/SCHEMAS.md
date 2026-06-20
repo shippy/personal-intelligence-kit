@@ -4,6 +4,9 @@ This document specifies the SQLite schemas that **ingest skills produce** and **
 
 All databases live in `data/` (relative to vault root).
 
+> **Output format:** analysis skills emit markdown into `output/`, which is an
+> OKF v0.1 bundle. See `_lib/OKF.md` and write outputs via `_lib/okf.py`.
+
 ---
 
 ## `data/journal.db` — Journal Entries
