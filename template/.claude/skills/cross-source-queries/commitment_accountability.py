@@ -30,6 +30,7 @@ from vault_config import (  # noqa: E402
     activity_log,
     owner_name,
 )
+import okf  # noqa: E402
 
 
 COMMITMENT_PATTERNS = [
@@ -153,7 +154,6 @@ def generate_report() -> Optional[Path]:
     report = analyzer.analyze(days_back=30)
 
     lines = [
-        f"---\ncreated: {date}\ntype: alert\nstatus: final\nsources: [email]\n---\n",
         f"# Commitment Accountability — {date}\n",
         f"Found **{report['total']}** commitments in sent mail (last 30 days).",
         f"Followed up: {report['followed_up']}, No follow-up: {report['no_follow_up']}\n",
@@ -168,9 +168,13 @@ def generate_report() -> Optional[Path]:
         lines.append(f"- **Status:** {followed}")
         lines.append(f"- **Excerpt:** _{c['commitment_text']}_\n")
 
-    out = output_dir("alerts") / f"commitment-accountability-{date}.md"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines))
+    out = okf.write_concept(
+        "alerts", f"commitment-accountability-{date}", type="alert",
+        title=f"Commitment Accountability — {date}",
+        description=f"{report['total']} commitments tracked in sent mail",
+        body="\n".join(lines), timestamp=date, status="final",
+        sources=["email"], tags=["commitment"],
+    )
     print(f"Wrote {out}")
 
     log = activity_log()
