@@ -52,6 +52,66 @@ STOPWORDS = {
 
 ROSEBUD_SPEAKER_RE = re.compile(r"^\*\*(.+?):\*\*\s*", re.MULTILINE)
 
+# Dedup is on content (date, speaker, body) — NOT filename. Rosebud exports are
+# cumulative, so the same entry recurs across many export files; including
+# filename in the key would store one copy per export (~15x inflation).
+# `filename` records the first export an entry was seen in (informational only).
+SCHEMA_SQL = """
+    CREATE TABLE IF NOT EXISTS entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        filename TEXT,
+        speaker TEXT DEFAULT 'author',
+        body TEXT NOT NULL,
+        mood TEXT,
+        word_count INTEGER,
+        UNIQUE(date, speaker, body)
+    );
+    CREATE TABLE IF NOT EXISTS mentions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        context TEXT,
+        FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS intentions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
+    CREATE INDEX IF NOT EXISTS idx_mentions_name ON mentions(name);
+"""
+
+MONTHS = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
+    "december": 12,
+}
+# Rosebud entry headers are human-readable, e.g. "Saturday, May 30th, 2026".
+HUMAN_DATE_RE = re.compile(
+    r"\b(january|february|march|april|may|june|july|august|september|october|november|december)"
+    r"\s+(\d{1,2})(?:st|nd|rd|th)?,\s*(\d{4})",
+    re.IGNORECASE,
+)
+
+
+def parse_rosebud_date(text: str) -> str | None:
+    """Extract an ISO date (YYYY-MM-DD) from a Rosebud header.
+
+    Handles both ISO dates and human-readable headers like
+    "Saturday, May 30th, 2026". Returns None if no date is found.
+    """
+    m = DATE_IN_FILENAME_RE.search(text)
+    if m:
+        return m.group(1)
+    m = HUMAN_DATE_RE.search(text)
+    if m:
+        month = MONTHS[m.group(1).lower()]
+        return f"{int(m.group(3)):04d}-{month:02d}-{int(m.group(2)):02d}"
+    return None
+
 
 @dataclass
 class Entry:
@@ -75,13 +135,15 @@ def parse_rosebud_file(path: Path) -> list[Entry]:
     for chunk in chunks:
         if not chunk.strip():
             continue
-        # Extract date
-        m = DATE_IN_FILENAME_RE.search(chunk[:200])
-        if m:
-            date = m.group(1)
-        else:
-            m = DATE_IN_FILENAME_RE.search(path.name)
-            date = m.group(1) if m else datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d")
+        # The date lives in the per-entry header (e.g. "### Saturday, May 30th,
+        # 2026"), which sits above the first "#### " sub-section. Prefer that;
+        # fall back to the export filename, then file mtime as a last resort.
+        header_zone = chunk.split("#### ", 1)[0][:400]
+        date = (
+            parse_rosebud_date(header_zone)
+            or parse_rosebud_date(path.name)
+            or datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d")
+        )
 
         # Try to split the Entry section into speaker turns
         entry_section = chunk
@@ -198,33 +260,7 @@ def main():
         db_path.unlink()
 
     conn = sqlite3.connect(db_path)
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            filename TEXT,
-            speaker TEXT DEFAULT 'author',
-            body TEXT NOT NULL,
-            mood TEXT,
-            word_count INTEGER,
-            UNIQUE(date, filename, speaker, body)
-        );
-        CREATE TABLE IF NOT EXISTS mentions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            entry_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            context TEXT,
-            FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
-        );
-        CREATE TABLE IF NOT EXISTS intentions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            entry_id INTEGER NOT NULL,
-            text TEXT NOT NULL,
-            FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
-        CREATE INDEX IF NOT EXISTS idx_mentions_name ON mentions(name);
-    """)
+    conn.executescript(SCHEMA_SQL)
 
     imported = 0
     for entry in all_entries:

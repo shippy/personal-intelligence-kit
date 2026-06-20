@@ -14,13 +14,13 @@ Read by: `weekly-reflection`, `cross-source-queries`
 ```sql
 CREATE TABLE entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL,          -- ISO 8601 date (e.g. "2026-01-15")
-    filename TEXT,               -- Source file name
+    date TEXT NOT NULL,          -- ISO 8601 date (e.g. "2026-01-15"), from the entry's own header
+    filename TEXT,               -- First source file the entry was seen in (informational)
     speaker TEXT DEFAULT 'author', -- "author" (vault owner) or app tag (e.g. "rosebud")
     body TEXT NOT NULL,          -- Entry body (may be multi-paragraph)
     mood TEXT,                   -- Optional mood tag
     word_count INTEGER,
-    UNIQUE(date, filename, speaker, body) -- Prevent duplicate imports
+    UNIQUE(date, speaker, body)  -- Dedup on content, not filename (cumulative exports re-emit entries)
 );
 
 CREATE TABLE mentions (
