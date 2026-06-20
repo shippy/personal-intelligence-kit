@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import output_dir, owner_name  # noqa: E402
+import okf  # noqa: E402
 
 from llm_synthesizer import WeeklyReflection
 
@@ -19,8 +20,7 @@ class ReflectionFormatter:
         self.review_date = datetime.now().strftime("%Y-%m-%d")
 
     def format(self, reflection: WeeklyReflection) -> str:
-        md = self._frontmatter()
-        md += self._opening(reflection)
+        md = self._opening(reflection)
         md += self._themes(reflection)
         md += self._tensions(reflection)
         md += self._commitments(reflection)
@@ -28,15 +28,6 @@ class ReflectionFormatter:
         md += self._reflection_questions(reflection)
         md += self._footer()
         return md
-
-    def _frontmatter(self) -> str:
-        return f"""---
-created: {self.review_date}
-type: reflection
-status: final
----
-
-"""
 
     def _opening(self, reflection: WeeklyReflection) -> str:
         return f"""# Weekly Reflection — {self.review_date}
@@ -101,8 +92,12 @@ status: final
 """
 
     def save(self, content: str, out_dir: Path | None = None) -> Path:
-        out = out_dir or output_dir("reflections")
-        out.mkdir(parents=True, exist_ok=True)
-        path = out / f"{self.review_date}-weekly-reflection.md"
-        path.write_text(content)
-        return path
+        return okf.write_concept(
+            "reflections",
+            f"{self.review_date}-weekly-reflection",
+            type="reflection",
+            title=f"Weekly Reflection — {self.review_date}",
+            body=content,
+            timestamp=self.review_date,
+            status="final",
+        )
