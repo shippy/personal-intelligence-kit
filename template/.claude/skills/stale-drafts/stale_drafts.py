@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import load_config, vault_root, output_dir, activity_log  # noqa: E402
+import okf  # noqa: E402
 
 from draft_analyzer import DraftAnalyzer
 from llm_suggester import LLMSuggester, DraftQueueResult, EnrichedQueueResult
@@ -141,14 +142,7 @@ class StaleDraftsOrchestrator:
         ctx_by_file = {c.draft_filename: c for c in self.contexts}
 
         # ── Terse ──
-        terse = f"""---
-created: {self.review_date}
-type: alert
-status: final
-sources: [{', '.join(self.data_sources_used)}]
----
-
-# Draft Queue — {self.review_date}
+        terse = f"""# Draft Queue — {self.review_date}
 
 **Stats:** {stats['total']} scanned | {len(finish_queue)} finishable | {len(drop_list) + empty_count} to drop
 
@@ -194,14 +188,7 @@ sources: [{', '.join(self.data_sources_used)}]
                 terse += f"- **{draft.filename}** — no content\n"
 
         # ── Dense ──
-        dense = f"""---
-created: {self.review_date}
-type: report
-status: final
-sources: [{', '.join(self.data_sources_used)}]
----
-
-# Draft Queue Analysis — {self.review_date}
+        dense = f"""# Draft Queue Analysis — {self.review_date}
 
 | Category | Count |
 |----------|-------|
@@ -228,24 +215,32 @@ sources: [{', '.join(self.data_sources_used)}]
             dense += f"```\n{draft.preview}\n```\n\n---\n\n"
 
         # Save
-        alerts = output_dir("alerts")
-        reports = output_dir("reports")
-        alerts.mkdir(parents=True, exist_ok=True)
-        reports.mkdir(parents=True, exist_ok=True)
-        terse_path = alerts / f"stale-drafts-{self.review_date}.md"
-        dense_path = reports / f"stale-drafts-analysis-{self.review_date}.md"
-        terse_path.write_text(terse)
-        dense_path.write_text(dense)
+        terse_path = okf.write_concept(
+            "alerts", f"stale-drafts-{self.review_date}", type="alert",
+            title=f"Draft Queue — {self.review_date}",
+            description=f"{len(finish_queue)} finishable drafts",
+            body=terse, timestamp=self.review_date, status="final",
+            sources=list(self.data_sources_used), tags=["drafts"],
+        )
+        dense_path = okf.write_concept(
+            "reports", f"stale-drafts-analysis-{self.review_date}", type="report",
+            title=f"Draft Queue Analysis — {self.review_date}",
+            body=dense, timestamp=self.review_date, status="final",
+            sources=list(self.data_sources_used), tags=["drafts"],
+        )
         print(f"Saved: {terse_path}")
         print(f"Saved: {dense_path}")
         return terse_path, dense_path
 
     def _generate_empty_report(self):
-        alerts = output_dir("alerts")
-        alerts.mkdir(parents=True, exist_ok=True)
-        path = alerts / f"stale-drafts-{self.review_date}.md"
-        path.write_text(f"---\ncreated: {self.review_date}\ntype: alert\n---\n\n# Draft Queue — {self.review_date}\n\nNo drafts with content found.\n")
+        path = okf.write_concept(
+            "alerts", f"stale-drafts-{self.review_date}", type="alert",
+            title=f"Draft Queue — {self.review_date}",
+            body=f"# Draft Queue — {self.review_date}\n\nNo drafts with content found.\n",
+            timestamp=self.review_date, status="final", tags=["drafts"],
+        )
         print(f"Saved: {path}")
+        return path
 
     def _send_notification(self, count, path):
         try:
