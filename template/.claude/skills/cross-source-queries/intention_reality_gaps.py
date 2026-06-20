@@ -40,6 +40,7 @@ from vault_config import (  # noqa: E402
     activity_log,
     owner_name,
 )
+import okf  # noqa: E402
 
 try:
     from pydantic import BaseModel, Field
@@ -512,13 +513,6 @@ def _print_terse_summary(report: "IntentionRealityReport") -> None:
 
 def _render_llm_report(goals_data: Dict, report: "IntentionRealityReport", date: str) -> str:
     lines = [
-        "---",
-        f"created: {date}",
-        "type: report",
-        "status: final",
-        "sources: [notes, reflections, llm]",
-        "---",
-        "",
         f"# Intention ↔ Reality Gap Analysis — {date}",
         "",
         f"Goals file: `{goals_data['file_path']}`",
@@ -591,13 +585,6 @@ def _render_heuristic_report(goals_data: Dict, analyzer: IntentionRealityAnalyze
             no_evidence.append((g, ev))
 
     lines = [
-        "---",
-        f"created: {date}",
-        "type: report",
-        "status: final",
-        "sources: [notes]",
-        "---",
-        "",
         f"# Intention ↔ Reality Gap Analysis — {date}",
         "",
         "_LLM unavailable — using keyword-match heuristics. Results are noisy._",
@@ -656,14 +643,15 @@ def generate_report() -> Optional[Path]:
 
     goals_data = analyzer.find_yearly_goals()
     if not goals_data:
-        md = (
-            f"---\ncreated: {date}\ntype: report\nstatus: final\n---\n\n"
+        body = (
             f"# Intention ↔ Reality Gap Analysis — {date}\n\n"
             f"⚠ No yearly goals file found in notes vault\n"
         )
-        out = output_dir("reports") / f"intention-reality-{date}.md"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(md)
+        out = okf.write_concept(
+            "reports", f"intention-reality-{date}", type="report",
+            title=f"Intention ↔ Reality Gap Analysis — {date}",
+            body=body, timestamp=date, status="final", tags=["intention-reality"],
+        )
         print(f"Wrote {out}")
         return out
 
@@ -697,9 +685,12 @@ def generate_report() -> Optional[Path]:
         if len(intentions) > 10:
             md += f"\n_...and {len(intentions) - 10} more_\n"
 
-    out = output_dir("reports") / f"intention-reality-{date}.md"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(md)
+    out = okf.write_concept(
+        "reports", f"intention-reality-{date}", type="report",
+        title=f"Intention ↔ Reality Gap Analysis — {date}",
+        body=md, timestamp=date, status="final",
+        sources=sources or None, tags=["intention-reality"],
+    )
     print(f"Wrote {out}")
 
     log = activity_log()
