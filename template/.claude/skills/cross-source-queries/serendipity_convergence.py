@@ -32,6 +32,7 @@ from vault_config import (  # noqa: E402
     output_dir,
     activity_log,
 )
+import okf  # noqa: E402
 
 
 # ── Topic extraction ─────────────────────────────────────────────────
@@ -282,7 +283,6 @@ def generate_report() -> Optional[Path]:
     person_conv = analyzer.detect_person_convergence(days_back=30)
 
     lines = [
-        f"---\ncreated: {date}\ntype: report\nstatus: final\n---\n",
         f"# Convergence Report — {date}\n",
     ]
 
@@ -307,9 +307,12 @@ def generate_report() -> Optional[Path]:
     if not topic_conv and not person_conv:
         lines.append("No convergences detected in the last 30 days.\n")
 
-    out = output_dir("reports") / f"convergence-{date}.md"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines))
+    out = okf.write_concept(
+        "reports", f"convergence-{date}", type="report",
+        title=f"Convergence Report — {date}",
+        description=f"{len(topic_conv)} topic, {len(person_conv)} person convergences",
+        body="\n".join(lines), timestamp=date, status="final", tags=["convergence"],
+    )
     print(f"Wrote {out}")
 
     log = activity_log()
