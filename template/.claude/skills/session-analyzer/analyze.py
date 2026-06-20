@@ -33,6 +33,61 @@ from vault_config import (  # noqa: E402
     output_dir,
     activity_log,
 )
+import okf  # noqa: E402
+
+
+def write_session_docs(active, dormant, cluster_stats, date, dormant_days):
+    terse_lines = [
+        f"# Session Health — {date}",
+        "",
+        "## Summary",
+        "",
+        f"- 🟢 **{len(active)}** active domain clusters",
+        f"- 🔴 **{len(dormant)}** dormant (no activity in {dormant_days} days)",
+        "",
+    ]
+    if dormant[:5]:
+        terse_lines.extend(["## Top Dormant Clusters", ""])
+        for domain, stats in dormant[:5]:
+            days = (datetime.now() - stats["last_visit"]).days if stats["last_visit"] else "?"
+            terse_lines.append(f"- 🔴 **{domain}** — {stats['count']} visits, last {days}d ago")
+        terse_lines.append("")
+    if active[:5]:
+        terse_lines.extend(["## Top Active Clusters", ""])
+        for domain, stats in active[:5]:
+            terse_lines.append(f"- 🟢 **{domain}** — {stats['count']} visits")
+    terse_body = "\n".join(terse_lines) + "\n"
+
+    dense_lines = [
+        f"# Session Health Report — {date}",
+        "",
+        "## All Clusters",
+        "",
+        "| Domain | Visits | Last Seen | Status |",
+        "|--------|--------|-----------|--------|",
+    ]
+    for domain, stats in sorted(cluster_stats.items(), key=lambda x: x[1]["count"], reverse=True)[:50]:
+        if stats["last_visit"]:
+            days = (datetime.now() - stats["last_visit"]).days
+            status = "🔴 dormant" if days > dormant_days else "🟢 active"
+            last_seen = stats["last_visit"].strftime("%Y-%m-%d")
+        else:
+            status, last_seen = "?", "?"
+        dense_lines.append(f"| {domain} | {stats['count']} | {last_seen} | {status} |")
+    dense_body = "\n".join(dense_lines) + "\n"
+
+    terse_path = okf.write_concept(
+        "alerts", f"session-health-{date}", type="alert",
+        title=f"Session Health — {date}",
+        description=f"{len(active)} active, {len(dormant)} dormant domain clusters",
+        body=terse_body, timestamp=date, status="final", sources=["browser"], tags=["session-health"],
+    )
+    dense_path = okf.write_concept(
+        "reports", f"session-health-{date}", type="report",
+        title=f"Session Health Report — {date}",
+        body=dense_body, timestamp=date, status="final", sources=["browser"], tags=["session-health"],
+    )
+    return [terse_path, dense_path]
 
 
 def main():
@@ -90,87 +145,9 @@ def main():
 
     date = now.strftime("%Y-%m-%d")
 
-    # Terse
-    terse_lines = [
-        "---",
-        f"created: {date}",
-        "type: alert",
-        "status: final",
-        "sources: [browser]",
-        "---",
-        "",
-        f"# Session Health — {date}",
-        "",
-        f"## Summary",
-        "",
-        f"- 🟢 **{len(active)}** active domain clusters",
-        f"- 🔴 **{len(dormant)}** dormant (no activity in {args.dormant_days} days)",
-        "",
-    ]
-
-    if dormant[:5]:
-        terse_lines.extend(["## Top Dormant Clusters", ""])
-        for domain, stats in dormant[:5]:
-            days = (now - stats["last_visit"]).days if stats["last_visit"] else "?"
-            terse_lines.append(
-                f"- 🔴 **{domain}** — {stats['count']} visits, last {days}d ago"
-            )
-        terse_lines.append("")
-
-    if active[:5]:
-        terse_lines.extend(["## Top Active Clusters", ""])
-        for domain, stats in active[:5]:
-            terse_lines.append(f"- 🟢 **{domain}** — {stats['count']} visits")
-
-    terse = "\n".join(terse_lines)
-
-    # Dense
-    dense_lines = [
-        "---",
-        f"created: {date}",
-        "type: report",
-        "status: final",
-        "sources: [browser]",
-        "---",
-        "",
-        f"# Session Health Report — {date}",
-        "",
-        "## All Clusters",
-        "",
-        "| Domain | Visits | Last Seen | Status |",
-        "|--------|--------|-----------|--------|",
-    ]
-    all_clusters = sorted(
-        cluster_stats.items(),
-        key=lambda x: x[1]["count"],
-        reverse=True,
+    terse_path, dense_path = write_session_docs(
+        active, dormant, cluster_stats, date, args.dormant_days
     )
-    for domain, stats in all_clusters[:50]:
-        if stats["last_visit"]:
-            days = (now - stats["last_visit"]).days
-            status = "🔴 dormant" if days > args.dormant_days else "🟢 active"
-            last_seen = stats["last_visit"].strftime("%Y-%m-%d")
-        else:
-            days = "?"
-            status = "?"
-            last_seen = "?"
-        dense_lines.append(
-            f"| {domain} | {stats['count']} | {last_seen} | {status} |"
-        )
-
-    dense = "\n".join(dense_lines)
-
-    # Write
-    alerts = output_dir("alerts")
-    reports = output_dir("reports")
-    alerts.mkdir(parents=True, exist_ok=True)
-    reports.mkdir(parents=True, exist_ok=True)
-
-    terse_path = alerts / f"session-health-{date}.md"
-    dense_path = reports / f"session-health-{date}.md"
-    terse_path.write_text(terse)
-    dense_path.write_text(dense)
-
     print(f"Wrote {terse_path}")
     print(f"Wrote {dense_path}")
 
