@@ -4,7 +4,7 @@
 # dependencies = [
 #     "anthropic>=0.40.0",
 #     "openai>=1.0.0",
-#     "pydantic-ai>=0.1.0",
+#     "pydantic-ai>=1.0.0",
 # ]
 # ///
 """
