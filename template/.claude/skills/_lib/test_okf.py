@@ -81,3 +81,13 @@ def test_read_frontmatter_roundtrip(tmp_path, monkeypatch):
     assert fm["type"] == "report"
     assert fm["title"] == "T"
     assert fm["tags"] == ["x"]
+
+
+def test_read_frontmatter_unescapes_and_splits(tmp_path, monkeypatch):
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    path = okf.write_concept("reports", "r", type="report",
+                             title='Has "quotes" and, comma', body="x",
+                             tags=["a, b", 'c"d'], timestamp="2026-06-20")
+    fm = okf.read_frontmatter(path)
+    assert fm["title"] == 'Has "quotes" and, comma'
+    assert fm["tags"] == ["a, b", 'c"d']

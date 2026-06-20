@@ -103,13 +103,72 @@ def link(target: str, text: str) -> str:
 
 def read_frontmatter(path: Any) -> dict[str, Any]:
     """Parse a concept file's YAML frontmatter into a dict ({} if none).
-    Consumer/test utility — requires PyYAML."""
-    import yaml
 
+    Handles the subset emitted by render_frontmatter (double-quoted scalars and
+    flow lists of quoted scalars) plus simple unquoted scalars, so no external
+    YAML dependency is required.
+    """
     text = Path(path).read_text()
     if not text.startswith("---\n"):
         return {}
     block, sep, _ = text[4:].partition("\n---")
     if not sep:
         return {}
-    return yaml.safe_load(block) or {}
+    out: dict[str, Any] = {}
+    for line in block.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, _, raw = line.partition(":")
+        out[key.strip()] = _parse_value(raw.strip())
+    return out
+
+
+def _parse_value(raw: str) -> Any:
+    if raw.startswith("[") and raw.endswith("]"):
+        inner = raw[1:-1].strip()
+        if not inner:
+            return []
+        return [_unquote(item) for item in _split_flow(inner)]
+    return _unquote(raw)
+
+
+def _split_flow(inner: str) -> list[str]:
+    """Split a flow sequence on commas that are not inside a quoted scalar."""
+    items: list[str] = []
+    buf: list[str] = []
+    in_quote = esc = False
+    for ch in inner:
+        if esc:
+            buf.append(ch)
+            esc = False
+        elif ch == "\\":
+            buf.append(ch)
+            esc = True
+        elif ch == '"':
+            in_quote = not in_quote
+            buf.append(ch)
+        elif ch == "," and not in_quote:
+            items.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    items.append("".join(buf))
+    return items
+
+
+def _unquote(s: str) -> str:
+    s = s.strip()
+    if not (len(s) >= 2 and s[0] == '"' and s[-1] == '"'):
+        return s
+    out: list[str] = []
+    esc = False
+    for ch in s[1:-1]:
+        if esc:
+            out.append(ch)
+            esc = False
+        elif ch == "\\":
+            esc = True
+        else:
+            out.append(ch)
+    return "".join(out)
