@@ -62,6 +62,7 @@ def write_concept(
     target_dir = output_dir("root") / subdir
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"{slug}.md"
+    existed = path.exists()
     fields: dict[str, Any] = {
         "type": type,
         "title": title,
@@ -72,4 +73,22 @@ def write_concept(
     }
     fields.update(extra)
     path.write_text(render_frontmatter(fields) + body)
+    _append_log(output_dir("root"), ts[:10], "Update" if existed else "Creation", title)
     return path
+
+
+def _append_log(root: Path, date: str, kind: str, title: str) -> None:
+    log_path = root / "log.md"
+    entry = f"* **{kind}**: {title}"
+    existing = log_path.read_text() if log_path.exists() else ""
+    heading = f"## {date}"
+    lines = existing.splitlines()
+    if heading in lines:
+        out: list[str] = []
+        for line in lines:
+            out.append(line)
+            if line == heading:
+                out.append(entry)
+        log_path.write_text("\n".join(out) + "\n")
+    else:
+        log_path.write_text(f"{heading}\n{entry}\n\n" + existing)

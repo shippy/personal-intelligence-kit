@@ -44,3 +44,25 @@ def test_write_concept_rejects_reserved_slug(tmp_path, monkeypatch):
     monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
     with pytest.raises(ValueError):
         okf.write_concept("alerts", "index", type="alert", title="x", body="")
+
+
+def test_log_records_creation_then_update(tmp_path, monkeypatch):
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    okf.write_concept("alerts", "demo", type="alert", title="First",
+                      body="x", timestamp="2026-06-20")
+    okf.write_concept("alerts", "demo", type="alert", title="First again",
+                      body="y", timestamp="2026-06-20")
+    log = (tmp_path / "log.md").read_text()
+    assert "## 2026-06-20" in log
+    assert "* **Creation**: First" in log
+    assert "* **Update**: First again" in log
+
+
+def test_log_newest_date_first(tmp_path, monkeypatch):
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    okf.write_concept("alerts", "a", type="alert", title="A", body="x",
+                      timestamp="2026-06-19")
+    okf.write_concept("alerts", "b", type="alert", title="B", body="x",
+                      timestamp="2026-06-20")
+    log = (tmp_path / "log.md").read_text()
+    assert log.index("## 2026-06-20") < log.index("## 2026-06-19")
