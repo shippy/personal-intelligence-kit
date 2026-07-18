@@ -16,15 +16,17 @@ This skill focuses on the qualitative layer.
 
 ## Invocation
 
+From the vault root (note `--project` — without it, `uv run` won't use the skill's
+environment and imports like `pydantic` will fail):
 ```bash
-cd .claude/skills/weekly-reflection
-uv run --env-file ../../.env weekly_reflection.py
-uv run --env-file ../../.env weekly_reflection.py --redact
+uv run --project .claude/skills/weekly-reflection --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py
+uv run --project .claude/skills/weekly-reflection --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py --redact
 ```
 
-Or from the vault root:
+Or from the skill directory (`.env` lives three levels up, at the vault root):
 ```bash
-uv run --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py
+cd .claude/skills/weekly-reflection
+uv run --env-file ../../../.env weekly_reflection.py
 ```
 
 Or via Claude Code: `batch: weekly-reflection`

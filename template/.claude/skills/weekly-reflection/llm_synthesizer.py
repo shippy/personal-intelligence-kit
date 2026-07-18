@@ -106,6 +106,11 @@ class ReflectionSynthesizer:
         name = owner_name()
         prompt = f"""You are a thoughtful analyst helping {name} reflect on their week.
 
+{name} is the user this reflection is for. Their own name and email address may appear
+in the data (email From/To lines, thread participants, git authorship). Never list
+{name} as a contact, commitment, or relationship — a message from {name} is their own
+sent mail, not correspondence from a third party.
+
 Your role is to:
 1. Identify **themes** — what they were actually focused on (not just what they planned)
 2. Detect **tensions** — gaps between intention and action, conflicting priorities

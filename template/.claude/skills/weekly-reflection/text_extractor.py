@@ -192,6 +192,7 @@ class TextExtractor:
 
             message_ids = json.loads(result.stdout)
             sent, received = [], []
+            own_addresses = self._own_email_addresses()
             name_lower = owner_name().lower()
 
             for msg_id in message_ids[:200]:
@@ -219,7 +220,15 @@ class TextExtractor:
                     snippet=snippet,
                     thread_id=msg_id,
                 )
-                if name_lower in headers.get("From", "").lower():
+                from_lower = headers.get("From", "").lower()
+                if own_addresses:
+                    is_sent = any(addr in from_lower for addr in own_addresses)
+                else:
+                    # Fallback: display-name match. Fragile — the configured
+                    # owner name may not match the From header (diacritics,
+                    # nicknames), which misfiles sent mail as received.
+                    is_sent = name_lower in from_lower
+                if is_sent:
                     sent.append(email)
                 else:
                     received.append(email)
@@ -232,6 +241,24 @@ class TextExtractor:
         except Exception as e:
             print(f"  ⚠ Email extraction failed: {e}")
             return {"sent": [], "received": []}
+
+    @staticmethod
+    def _own_email_addresses() -> set:
+        """The user's own addresses per notmuch config, for sent/received classification."""
+        addresses = set()
+        for key in ("user.primary_email", "user.other_email"):
+            try:
+                r = subprocess.run(
+                    ["notmuch", "config", "get", key],
+                    capture_output=True, text=True, timeout=10,
+                )
+            except (subprocess.TimeoutExpired, OSError):
+                continue
+            if r.returncode == 0:
+                addresses.update(
+                    line.strip().lower() for line in r.stdout.splitlines() if line.strip()
+                )
+        return addresses
 
     @staticmethod
     def _find_message_in_thread(data, target_id: str) -> Optional[dict]:
