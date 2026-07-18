@@ -3,12 +3,40 @@
 Run: uv run --no-project --with pytest pytest test_ingest.py
 """
 
+import sqlite3
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ingest
+
+
+LEGACY_SCHEMA = """
+    CREATE TABLE entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        filename TEXT,
+        speaker TEXT DEFAULT 'author',
+        body TEXT NOT NULL,
+        mood TEXT,
+        word_count INTEGER,
+        UNIQUE(date, filename, speaker, body)
+    );
+    CREATE TABLE mentions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        context TEXT,
+        FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+    );
+    CREATE TABLE intentions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+    );
+"""
 
 
 # --- parse_rosebud_date: human-readable headers ---
@@ -108,3 +136,46 @@ def test_entries_dated_by_their_own_header(tmp_path):
     later = [e for e in entries if e.speaker == "author" and "TV gift" in e.body]
     assert later, "expected the TV-gift entry"
     assert later[0].date == "2026-06-02"
+
+
+# --- _migrate_legacy_dedup ---
+
+def test_migrate_collapses_legacy_filename_duplicates(tmp_path):
+    db = tmp_path / "journal.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(LEGACY_SCHEMA)
+    # Same entry re-exported under two filenames -> two rows under legacy key.
+    conn.execute(
+        "INSERT INTO entries (date, filename, speaker, body) VALUES (?,?,?,?)",
+        ("2026-01-01", "export-a.md", "author", "hello"),
+    )
+    conn.execute(
+        "INSERT INTO entries (date, filename, speaker, body) VALUES (?,?,?,?)",
+        ("2026-01-01", "export-b.md", "author", "hello"),
+    )
+    conn.execute("INSERT INTO mentions (entry_id, name) VALUES (2, 'Bob')")
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0] == 2
+
+    ingest._migrate_legacy_dedup(conn)
+
+    rows = conn.execute("SELECT date, speaker, body FROM entries").fetchall()
+    assert rows == [("2026-01-01", "author", "hello")]
+    new_sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='entries'"
+    ).fetchone()[0]
+    assert "UNIQUE(date, speaker, body)" in new_sql
+    assert "filename, speaker, body" not in new_sql
+    # child row orphaned by the collapse is pruned
+    assert conn.execute("SELECT COUNT(*) FROM mentions").fetchone()[0] == 0
+
+
+def test_migrate_is_noop_on_current_schema(tmp_path):
+    db = tmp_path / "journal.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(ingest.SCHEMA_SQL)
+    ingest._migrate_legacy_dedup(conn)  # must not raise or alter the schema
+    sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='entries'"
+    ).fetchone()[0]
+    assert "UNIQUE(date, speaker, body)" in sql

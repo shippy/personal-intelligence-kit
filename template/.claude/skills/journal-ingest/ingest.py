@@ -84,6 +84,51 @@ SCHEMA_SQL = """
     CREATE INDEX IF NOT EXISTS idx_mentions_name ON mentions(name);
 """
 
+
+def _migrate_legacy_dedup(conn: sqlite3.Connection) -> None:
+    """Rebuild `entries` if it still carries the legacy filename-based UNIQUE
+    key. `CREATE TABLE IF NOT EXISTS` cannot change a constraint on an existing
+    table, so vaults created before the content-only dedupe would otherwise keep
+    inflating one row per export filename. This collapses existing duplicates
+    onto the (date, speaker, body) key and prunes child rows orphaned by it.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='entries'"
+    ).fetchone()
+    if not row or "filename, speaker, body" not in row[0]:
+        return  # already content-only, or no table yet
+
+    print("Migrating journal.db to content-based dedup (date, speaker, body)...")
+    conn.executescript(
+        """
+        PRAGMA foreign_keys=OFF;
+        BEGIN;
+        CREATE TABLE entries_migrated (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            filename TEXT,
+            speaker TEXT DEFAULT 'author',
+            body TEXT NOT NULL,
+            mood TEXT,
+            word_count INTEGER,
+            UNIQUE(date, speaker, body)
+        );
+        INSERT OR IGNORE INTO entries_migrated
+            (id, date, filename, speaker, body, mood, word_count)
+            SELECT id, date, filename, speaker, body, mood, word_count
+            FROM entries ORDER BY id;
+        DROP TABLE entries;
+        ALTER TABLE entries_migrated RENAME TO entries;
+        DELETE FROM mentions WHERE entry_id NOT IN (SELECT id FROM entries);
+        DELETE FROM intentions WHERE entry_id NOT IN (SELECT id FROM entries);
+        CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
+        CREATE INDEX IF NOT EXISTS idx_mentions_name ON mentions(name);
+        COMMIT;
+        PRAGMA foreign_keys=ON;
+        """
+    )
+
+
 MONTHS = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
     "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
@@ -261,6 +306,7 @@ def main():
 
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA_SQL)
+    _migrate_legacy_dedup(conn)
 
     imported = 0
     for entry in all_entries:
