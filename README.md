@@ -109,10 +109,18 @@ Pull template improvements into an existing vault:
 
 ```bash
 cd ~/my-vault
-copier update --vcs-ref=v0.4.4
+copier update --vcs-ref=v0.7.0
 ```
 
 This re-renders templates and merges changes. Your `output/`, `data/`, `logs/`, and `.env` are preserved across updates.
+
+## Development checks
+
+```bash
+uv --no-config run --locked --project template/.claude/skills/weekly-reflection --with pytest --with rapidfuzz pytest -q template/.claude/skills
+python3 -m unittest discover -s template/scripts/pi_task -p 'test_*.py' -t template/scripts
+node --test template/scripts/pi_task/project-handoff.test.mjs
+```
 
 ## License
 

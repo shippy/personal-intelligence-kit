@@ -1,7 +1,12 @@
 # OKF Conformance for `output/` — Design
 
 **Date:** 2026-06-20
-**Status:** Approved (design); implementation pending
+**Status:** Implemented
+
+> **Implementation note:** the root `output/index.md` manifest is *not* shipped.
+> `output/` is gitignored as local user data and created at runtime by the
+> skills, and `okf_version` is OKF-optional (the spec says bundles *may* declare
+> it). `_lib/OKF.md` documents the format for users who want to add one manually.
 **Spec referenced:** Open Knowledge Format (OKF) v0.1 — https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
 
 ## Summary

@@ -10,13 +10,13 @@ Orchestrates parallel synchronization of all data sources enabled in `vault.toml
 ## Invocation
 
 ```bash
-uv run --env-file .env .claude/skills/data-sync/sync_all.py --yes
-uv run --env-file .env .claude/skills/data-sync/sync_all.py --skip email
+op run --env-file=.env -- uv run .claude/skills/data-sync/sync_all.py --yes
+op run --env-file=.env -- uv run .claude/skills/data-sync/sync_all.py --skip email
 ```
 
 Or via Claude Code: `batch: data-sync`
 
-The `--env-file .env` flag passes secrets (API tokens for task providers, etc.) into the subprocess.
+`op run` resolves the `op://Development/<item>/credential` references in `.env` and passes secrets to the orchestrator and its workers. Authenticate the 1Password CLI first.
 
 ## What It Does
 

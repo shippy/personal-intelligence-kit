@@ -84,6 +84,51 @@ SCHEMA_SQL = """
     CREATE INDEX IF NOT EXISTS idx_mentions_name ON mentions(name);
 """
 
+
+def _migrate_legacy_dedup(conn: sqlite3.Connection) -> None:
+    """Rebuild `entries` if it still carries the legacy filename-based UNIQUE
+    key. `CREATE TABLE IF NOT EXISTS` cannot change a constraint on an existing
+    table, so vaults created before the content-only dedupe would otherwise keep
+    inflating one row per export filename. This collapses existing duplicates
+    onto the (date, speaker, body) key and prunes child rows orphaned by it.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='entries'"
+    ).fetchone()
+    if not row or "filename, speaker, body" not in row[0]:
+        return  # already content-only, or no table yet
+
+    print("Migrating journal.db to content-based dedup (date, speaker, body)...")
+    conn.executescript(
+        """
+        PRAGMA foreign_keys=OFF;
+        BEGIN;
+        CREATE TABLE entries_migrated (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            filename TEXT,
+            speaker TEXT DEFAULT 'author',
+            body TEXT NOT NULL,
+            mood TEXT,
+            word_count INTEGER,
+            UNIQUE(date, speaker, body)
+        );
+        INSERT OR IGNORE INTO entries_migrated
+            (id, date, filename, speaker, body, mood, word_count)
+            SELECT id, date, filename, speaker, body, mood, word_count
+            FROM entries ORDER BY id;
+        DROP TABLE entries;
+        ALTER TABLE entries_migrated RENAME TO entries;
+        DELETE FROM mentions WHERE entry_id NOT IN (SELECT id FROM entries);
+        DELETE FROM intentions WHERE entry_id NOT IN (SELECT id FROM entries);
+        CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
+        CREATE INDEX IF NOT EXISTS idx_mentions_name ON mentions(name);
+        COMMIT;
+        PRAGMA foreign_keys=ON;
+        """
+    )
+
+
 MONTHS = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
     "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
@@ -113,6 +158,50 @@ def parse_rosebud_date(text: str) -> str | None:
     return None
 
 
+ROSEBUD_ENTRIES_HEADING_RE = re.compile(r"^#[^\n#]*Rosebud entries[^\n]*$", re.MULTILINE)
+TRAILING_EXPORT_SECTION_RE = re.compile(
+    r"^# (Drafts|Goals|Weekly reports)[ \t]*$", re.MULTILINE | re.IGNORECASE
+)
+EXPORT_SECTION_METADATA = {
+    "drafts": r"^\*\*(?:Last edited|Journal day):\*\*",
+    "goals": r"^\*\*(?:Status|Created):\*\*",
+    "weekly reports": r"^\*\*(?:Period|Generated):\*\*",
+}
+
+
+def rosebud_entries_section(text: str) -> str:
+    """Return only the journal-entries portion of a Rosebud export.
+
+    Newer exports wrap the entries in an `Exported:` preamble and append
+    `# Drafts`, `# Goals`, and `# Weekly reports` sections after them. Those
+    sections reuse the same `## `/`### ` heading depths as entries, so the chunk
+    splitter would otherwise ingest draft timestamps, goal blurbs, and weekly
+    report prose as journal entries — each misdated to whatever ISO timestamp
+    happened to appear first in its chunk. Older exports carry no such sections,
+    where this is a no-op.
+    """
+    m = ROSEBUD_ENTRIES_HEADING_RE.search(text)
+    if not m:
+        return text
+    start = m.end()
+    for boundary in TRAILING_EXPORT_SECTION_RE.finditer(text, start):
+        remaining = text[boundary.end():]
+        next_heading = re.search(r"^# ", remaining, re.MULTILINE)
+        section = remaining[:next_heading.start()] if next_heading else remaining
+        # Entry prose can itself contain headings, even '# Goals'. Require the
+        # export's section metadata, or an empty section followed by another
+        # export section/end-of-file, before treating a heading as a boundary.
+        empty_export = not section.strip() and (
+            next_heading is None
+            or TRAILING_EXPORT_SECTION_RE.match(remaining, next_heading.start())
+        )
+        if empty_export or re.search(
+            EXPORT_SECTION_METADATA[boundary.group(1).lower()], section, re.MULTILINE
+        ):
+            return text[start:boundary.start()]
+    return text[start:]
+
+
 @dataclass
 class Entry:
     date: str  # ISO
@@ -128,7 +217,7 @@ def parse_rosebud_file(path: Path) -> list[Entry]:
     Within the #### Entry section, speaker turns are marked as **Name:** lines.
     We split these into separate entries so analysis can filter by speaker.
     """
-    text = path.read_text(errors="ignore")
+    text = rosebud_entries_section(path.read_text(errors="ignore"))
     entries = []
     # Rosebud format: sessions split by "## " headers
     chunks = re.split(r"\n(?=## )", text)
@@ -261,6 +350,7 @@ def main():
 
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA_SQL)
+    _migrate_legacy_dedup(conn)
 
     imported = 0
     for entry in all_entries:

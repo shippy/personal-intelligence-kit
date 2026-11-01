@@ -75,10 +75,15 @@ Once they choose:
 
 ### Phase 6: Save Output
 
-Save to `output/drafts-for-review/YYYY-MM-DD-[draft-name]-continued.md` with frontmatter:
+Save with `_lib/okf.py::write_concept` using subdirectory `drafts-for-review`,
+slug `YYYY-MM-DD-[draft-name]-continued`, type `draft`, and the draft title. Pass
+the original path, continuation date, chosen direction, and status as extra fields.
+This writes the frontmatter below and updates `output/log.md`:
 
 ```yaml
 ---
+type: draft
+title: [draft title]
 original: [path to original draft]
 continued_date: YYYY-MM-DD
 direction_chosen: [title of chosen direction]

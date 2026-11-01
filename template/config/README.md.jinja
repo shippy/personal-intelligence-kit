@@ -13,6 +13,11 @@ Two `.plist` files are provided:
 
 ### Install
 
+Install the 1Password CLI (`op`) and authorize access to the referenced secrets.
+Scheduled runs need unattended 1Password authentication; interactive unlock prompts
+will fail under launchd or cron. The generated plists use Homebrew paths for `op`
+and `uv`; adjust them to match your installation. Keep credentials in 1Password.
+
 ```bash
 # Copy plists into LaunchAgents
 cp config/com.claude.daily-sync.plist ~/Library/LaunchAgents/
@@ -44,7 +49,7 @@ rm ~/Library/LaunchAgents/com.claude.weekly-reflect.plist
 
 On recent macOS, the launchd-spawned process needs Full Disk Access to read email, browser, and other sources. Grant it to:
 
-- `/opt/homebrew/bin/uv` (the binary invoked by the plist)
+- `/opt/homebrew/bin/op` and `/opt/homebrew/bin/uv` (the binaries invoked by the plist)
 - Or Terminal.app if you prefer to run manually
 
 System Settings → Privacy & Security → Full Disk Access.
@@ -77,6 +82,6 @@ crontab -e
 Any time:
 
 ```bash
-uv run .claude/skills/data-sync/sync_all.py --yes
-uv run .claude/skills/weekly-reflection/weekly_reflection.py
+op run --env-file=.env -- uv run .claude/skills/data-sync/sync_all.py --yes
+op run --env-file=.env -- uv run --project .claude/skills/weekly-reflection .claude/skills/weekly-reflection/weekly_reflection.py
 ```

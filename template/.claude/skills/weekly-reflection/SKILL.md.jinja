@@ -19,19 +19,19 @@ This skill focuses on the qualitative layer.
 From the vault root (note `--project` — without it, `uv run` won't use the skill's
 environment and imports like `pydantic` will fail):
 ```bash
-uv run --project .claude/skills/weekly-reflection --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py
-uv run --project .claude/skills/weekly-reflection --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py --redact
+op run --env-file=.env -- uv run --project .claude/skills/weekly-reflection .claude/skills/weekly-reflection/weekly_reflection.py
+op run --env-file=.env -- uv run --project .claude/skills/weekly-reflection .claude/skills/weekly-reflection/weekly_reflection.py --redact
 ```
 
 Or from the skill directory (`.env` lives three levels up, at the vault root):
 ```bash
 cd .claude/skills/weekly-reflection
-uv run --env-file ../../../.env weekly_reflection.py
+op run --env-file=../../../.env -- uv run weekly_reflection.py
 ```
 
 Or via Claude Code: `batch: weekly-reflection`
 
-The `--env-file` flag passes `OPENAI_API_KEY` from `.env` into the subprocess without needing to `source` the file or install `python-dotenv`.
+Store `OPENAI_API_KEY` in the 1Password `Development` vault and keep its `op://Development/<item>/credential` reference in `.env`. `op run` resolves the reference for the subprocess; authenticate the 1Password CLI first.
 
 Synthesis uses OpenAI's `gpt-5.5` first, falling back to `gpt-5.4` if the newer model isn't available on the API yet.
 
@@ -63,7 +63,7 @@ Disabled sources are skipped gracefully.
 
 ### Phase 2: LLM Synthesis
 
-This phase is where Claude Code takes over. You (Claude) read the extracted text blob (written to `working/scratch/weekly-reflection-input-YYYY-MM-DD.md`) and produce:
+The script sends the extracted text to the configured OpenAI model via `pydantic-ai` and produces:
 
 - **Themes** — recurring topics, time allocation
 - **Tensions** — stated intentions vs actual behavior, conflicting priorities
@@ -111,8 +111,8 @@ sources: [journal, notes, email, browser, tasks]  # whichever are enabled
 
 ## Files
 
-- `weekly_reflection.py` — Text extractor (runs first, produces input for Claude)
-- You (Claude) then read the scratch file and write the reflection directly to `output/reflections/`
+- `weekly_reflection.py` — orchestrates extraction, model synthesis, formatting, and saving
+- `output_formatter.py` — writes the reflection through `_lib/okf.py` and updates `output/log.md`
 
 ## Philosophy
 

@@ -273,6 +273,6 @@ Detailed workflows live in `.claude/skills/*/SKILL.md`. Each skill is loaded on-
 - Skills import shared helpers from `.claude/skills/_lib/` (`vault_config.py` for paths, `SCHEMAS.md` for data contracts)
 - Ingest skills write to normalized SQLite databases in `data/` (`journal.db`, `tasks.db`, `browser-history.db`)
 - Analysis skills read from those databases — they're decoupled from how data was ingested
-- LLM-powered skills (`weekly-reflection`, `stale-drafts`) use `pydantic-ai` + Claude via `ANTHROPIC_API_KEY`
-- Run skills with `uv run --env-file .env <script>` to pass secrets from `.env` into the subprocess
-- Skills degrade gracefully: if `ANTHROPIC_API_KEY` is unset, LLM skills fall back to heuristic mode
+- LLM-powered skills use `pydantic-ai`: weekly-reflection requires `OPENAI_API_KEY`; stale-drafts optionally uses `ANTHROPIC_API_KEY` and falls back to heuristic ranking
+- Store secrets in the 1Password `Development` vault; `.env` contains `op://Development/<item>/credential` references
+- Run credential-dependent skills with `op run --env-file=.env -- uv run <script>`; use `--project .claude/skills/<skill>` for skills with a `pyproject.toml`

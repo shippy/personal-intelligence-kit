@@ -7,10 +7,12 @@
 
     <key>ProgramArguments</key>
     <array>
+        <string>/opt/homebrew/bin/op</string>
+        <string>run</string>
+        <string>--env-file={{ vault_path }}/.env</string>
+        <string>--</string>
         <string>/opt/homebrew/bin/uv</string>
         <string>run</string>
-        <string>--env-file</string>
-        <string>{{ vault_path }}/.env</string>
         <string>{{ vault_path }}/.claude/skills/data-sync/sync_all.py</string>
         <string>--yes</string>
     </array>

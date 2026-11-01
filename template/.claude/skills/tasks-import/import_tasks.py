@@ -196,6 +196,13 @@ def _get_ms_credential():
 
 def _ms_graph_get(credential, endpoint: str, *, retries: int = 3) -> dict:
     """Make an authenticated GET to the Graph API with retry on 429/503."""
+    if endpoint.startswith(_MS_GRAPH_BASE + "/"):
+        url = endpoint
+    elif endpoint.startswith("/"):
+        url = f"{_MS_GRAPH_BASE}{endpoint}"
+    else:
+        raise ValueError("Graph pagination URL must use the configured Graph API base")
+
     import httpx
     import time
 
@@ -204,7 +211,7 @@ def _ms_graph_get(credential, endpoint: str, *, retries: int = 3) -> dict:
 
     delay = 1.0
     for attempt in range(retries):
-        resp = httpx.get(f"{_MS_GRAPH_BASE}{endpoint}", headers=headers, timeout=30.0)
+        resp = httpx.get(url, headers=headers, timeout=30.0)
         if resp.status_code == 429 or resp.status_code == 503:
             if attempt < retries - 1:
                 wait = delay
@@ -225,6 +232,24 @@ def _ms_graph_get(credential, endpoint: str, *, retries: int = 3) -> dict:
     raise RuntimeError("Graph API request failed after retries")
 
 
+def _ms_graph_collection(credential, endpoint: str) -> list[dict]:
+    """Fetch every page, rejecting incomplete responses before reconciliation."""
+    items = []
+    visited = set()
+    while endpoint:
+        if endpoint in visited:
+            raise ValueError("Graph pagination repeated a page")
+        visited.add(endpoint)
+        page = _ms_graph_get(credential, endpoint)
+        if not isinstance(page.get("value"), list):
+            raise ValueError("Graph collection response is missing its value list")
+        items.extend(page["value"])
+        endpoint = page.get("@odata.nextLink")
+        if endpoint is not None and (not isinstance(endpoint, str) or not endpoint):
+            raise ValueError("Graph collection response has an invalid nextLink")
+    return items
+
+
 def import_microsoft_todo(full: bool) -> int:
     """Import tasks from Microsoft To-Do via the Graph API.
 
@@ -236,61 +261,59 @@ def import_microsoft_todo(full: bool) -> int:
     credential = _get_ms_credential()
 
     # Fetch all task lists
-    lists_resp = _ms_graph_get(credential, "/me/todo/lists")
-    task_lists = lists_resp.get("value", [])
+    task_lists = _ms_graph_collection(credential, "/me/todo/lists")
     print(f"  Found {len(task_lists)} task lists")
 
     conn = open_db()
     imported = 0
+    seen_ids: set[str] = set()
+    complete = True
 
-    for tl in task_lists:
-        list_id = tl["id"]
-        list_name = tl.get("displayName", "")
-        time.sleep(0.1)  # Respect rate limits
+    try:
+        with conn:
+            for tl in task_lists:
+                list_id = tl["id"]
+                list_name = tl.get("displayName", "")
+                time.sleep(0.1)  # Respect rate limits
 
-        try:
-            tasks_resp = _ms_graph_get(credential, f"/me/todo/lists/{list_id}/tasks")
-        except Exception as exc:
-            print(f"  Warning: failed to fetch list '{list_name}': {exc}")
-            continue
+                try:
+                    tasks = _ms_graph_collection(credential, f"/me/todo/lists/{list_id}/tasks")
+                except Exception as exc:
+                    print(f"  Warning: failed to fetch list '{list_name}': {exc}")
+                    complete = False
+                    continue
 
-        for t in tasks_resp.get("value", []):
-            # Map Microsoft status → normalised status
-            ms_status = t.get("status", "notStarted")
-            if ms_status == "completed":
-                status = "done"
+                for t in tasks:
+                    task_id = f"ms-todo:{t['id']}"
+                    seen_ids.add(task_id)
+                    status = "done" if t.get("status") == "completed" else "open"
+                    upsert(conn, {
+                        "id": task_id,
+                        "title": t.get("title", ""),
+                        "body": (t.get("body") or {}).get("content", ""),
+                        "status": status,
+                        "list_name": list_name,
+                        "created_at": t.get("createdDateTime"),
+                        "completed_at": (t.get("completedDateTime") or {}).get("dateTime"),
+                        "due_date": (t.get("dueDateTime") or {}).get("dateTime"),
+                        "provider": "microsoft-todo",
+                        "raw_json": json.dumps(t),
+                    })
+                    imported += 1
+
+            if complete:
+                # Only a complete account snapshot proves absence. Per-row updates
+                # avoid SQLite's bind-variable limit for large task collections.
+                missing = [
+                    (task_id,) for (task_id,) in conn.execute(
+                        "SELECT id FROM tasks WHERE provider = 'microsoft-todo' AND status = 'open'"
+                    ) if task_id not in seen_ids
+                ]
+                conn.executemany("UPDATE tasks SET status = 'cancelled' WHERE id = ?", missing)
             else:
-                status = "open"
-
-            # Extract nested datetime fields
-            due_date = None
-            if t.get("dueDateTime"):
-                due_date = t["dueDateTime"].get("dateTime")
-
-            completed_at = None
-            if t.get("completedDateTime"):
-                completed_at = t["completedDateTime"].get("dateTime")
-
-            body = ""
-            if t.get("body"):
-                body = t["body"].get("content", "")
-
-            upsert(conn, {
-                "id": f"ms-todo:{t['id']}",
-                "title": t.get("title", ""),
-                "body": body,
-                "status": status,
-                "list_name": list_name,
-                "created_at": t.get("createdDateTime"),
-                "completed_at": completed_at,
-                "due_date": due_date,
-                "provider": "microsoft-todo",
-                "raw_json": json.dumps(t),
-            })
-            imported += 1
-
-    conn.commit()
-    conn.close()
+                print("  Skipping deletion reconciliation: task snapshot is incomplete")
+    finally:
+        conn.close()
     return imported
 
 

@@ -39,12 +39,12 @@ class WeeklyReflectionOrchestrator:
         self.review_date = datetime.now().strftime("%Y-%m-%d")
         self.redact = redact
 
-        # OPENAI_API_KEY should be in env via: uv run --env-file .env
+        # OPENAI_API_KEY should be in env via: op run --env-file=.env -- uv run
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError(
-                "OPENAI_API_KEY not found in .env file. "
-                "Set it to enable LLM synthesis."
+                "OPENAI_API_KEY not found in the process environment. "
+                "Run through op run to resolve its 1Password reference."
             )
 
         self.text_extractor = TextExtractor(days_back=7)

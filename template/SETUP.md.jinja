@@ -7,7 +7,7 @@ Welcome, {{ owner_name }}. This is your personal intelligence vault, scaffolded 
 Copier generated a vault with:
 - `CLAUDE.md` — the system prompt that turns Claude Code into your personal intelligence agent
 - `vault.toml` — runtime config (edit this to change sources/paths later)
-- `.env` — secrets (gitignored; fill in as needed)
+- `.env` — 1Password secret references (gitignored)
 - `.claude/skills/` — the skills that do the actual work
 - `output/`, `working/`, `logs/`, `data/` — your working directories
 
@@ -27,11 +27,14 @@ Read vault.toml and tell me which data sources are enabled.
 
 Claude should answer based on your config.
 
-### 2. Fill in secrets
+### 2. Configure secret references
 
-Open `.env` and fill in values you need:
+Store credentials in the 1Password `Development` vault. Environment files contain
+`op://Development/<item>/credential` references; keep plaintext keys in 1Password.
+Authenticate the `op` CLI before running commands that need credentials.
 
-- `ANTHROPIC_API_KEY` — required for LLM-powered skills (weekly-reflection, etc.)
+- `OPENAI_API_KEY` — required for weekly-reflection
+- `ANTHROPIC_API_KEY` — optional for stale-drafts LLM ranking
 {%- if enable_contacts_mcp %}
 - `CLAY_API_KEY` — for Clay.earth contacts MCP
 {%- endif %}
@@ -97,10 +100,10 @@ See `.claude/skills/tasks-import/SKILL.md` for provider-specific setup.
 ### 4. Run your first sync
 
 ```bash
-uv run --env-file .env .claude/skills/data-sync/sync_all.py --yes
+op run --env-file=.env -- uv run .claude/skills/data-sync/sync_all.py --yes
 ```
 
-This runs all enabled sync workers in parallel. The `--env-file .env` flag passes API tokens and secrets into the subprocess without needing to `source .env` first.
+This runs all enabled sync workers in parallel. `op run` resolves 1Password references and injects credentials into the subprocess and its workers.
 
 {% if enable_scheduled_tasks -%}
 ### 5. Install scheduled tasks (optional)
@@ -120,9 +123,8 @@ See `config/README.md` for details and Linux alternatives.
 Once you have some data:
 
 ```bash
-uv run --env-file .env .claude/skills/weekly-reflection/weekly_reflection.py
-# Then in Claude Code:
-# "Read working/scratch/weekly-reflection-input-YYYY-MM-DD.md and produce the reflection."
+op run --env-file=.env -- uv run --project .claude/skills/weekly-reflection .claude/skills/weekly-reflection/weekly_reflection.py
+# Writes output/reflections/YYYY-MM-DD-weekly-reflection.md
 ```
 
 ## What to Do Next
