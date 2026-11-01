@@ -43,13 +43,14 @@ def reference_repositories(config, vault, para):
 
 def native_policy(profile, checkout, vault, para, state_root, temporary, references=(), task_roots=()):
     project_roots = list(task_roots) if task_roots else [checkout]
-    readable = [*project_roots, para, vault / "output", vault / "working", vault / "data", ASSETS, *references]
+    notes_roots = [para] if para is not None else []
+    readable = [*project_roots, *notes_roots, vault / "output", vault / "working", vault / "data", ASSETS, *references]
     readable += [Path(path) for path in ("/bin", "/sbin", "/usr", "/System", "/Library", "/opt/homebrew", "/etc", "/private/etc", "/dev/null", "/dev/urandom")]
     writable = [vault / name for name in ("output", "working", "logs")] if profile == "pkm" else project_roots
     for path in writable:
         if path.is_symlink() or overlap(path.resolve(), para) or overlap(path.resolve(), state_root):
             raise ValueError(f"Unsafe writable root: {path}")
-    forbidden = [para, state_root, ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
+    forbidden = [*notes_roots, state_root, ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
     forbidden += [root / name for root in project_roots for name in (".git", ".pi", ".agents", ".claude")]
     forbidden += [path for path in references if not (profile == "project" and any(path == root or path in root.parents for root in project_roots))]
     for root in project_roots:
@@ -101,8 +102,13 @@ def run(args, stack):
         return subprocess.run(["node", str(ASSETS / "check-seatbelt.mjs"), str(EXTENSION)], check=True)
     vault = args.vault.expanduser().resolve(strict=True)
     config = tomllib.loads((vault / "vault.toml").read_text())
-    para = Path(config["notes"]["vault_path"]).expanduser()
-    para = (para if para.is_absolute() else vault / para).resolve(strict=True)
+    notes = config.get("notes", {})
+    para = None
+    if notes.get("app", "none") != "none":
+        if not notes.get("vault_path"):
+            raise ValueError("notes.vault_path is required when a notes source is enabled")
+        para = Path(notes["vault_path"]).expanduser()
+        para = (para if para.is_absolute() else vault / para).resolve(strict=True)
     references = reference_repositories(config, vault, para)
     if args.new and args.task or args.repo and not args.new or args.add_repo and not args.task:
         raise ValueError("Use --repo with --new, or --add-repo with --task; --new and --task are exclusive")
@@ -152,7 +158,7 @@ def run(args, stack):
         state = session_state(state_root, checkout)
     handoff = args.handoff.expanduser().resolve(strict=True) if args.handoff else state / "handoff.md"
     print(f"PI-TASK | native Seatbelt | {profile.upper()} | {checkout}", flush=True)
-    print(f"PARA: READ-ONLY | Exa: enabled | Fal: not configured\nShell network: localhost | trusted Exa extension: external HTTPS", flush=True)
+    print(f"PARA: {'READ-ONLY' if para is not None else 'disabled'} | Exa: enabled | Fal: not configured\nShell network: localhost | trusted Exa extension: external HTTPS", flush=True)
     for reference in references:
         print(f"Reference: {reference} (read-only outside active workspace)", flush=True)
     for root in task_roots:
@@ -201,7 +207,7 @@ def run(args, stack):
             "currentRepositories": [entry["repository"] for entry in manifest["repositories"]] if manifest else [],
         }
         (runtime / "handoff-config.json").write_text(json.dumps(handoff_config))
-        context += f"\nProfile: {profile}\nWorkspace: {checkout}\nHuman vault: {para}\nAI vault: {vault}\nWritable roots: {', '.join(policy['writable'])}\n"
+        context += f"\nProfile: {profile}\nWorkspace: {checkout}\nHuman vault: {para or '(disabled)'}\nAI vault: {vault}\nWritable roots: {', '.join(policy['writable'])}\n"
         context += f"\nProject handoff request file: {handoff_config['requestPath']}\nEligible handoff repositories: {', '.join(handoff_config['repositories'])}\nCurrent named task: {handoff_config['currentTask'] or '(none)'}\n"
         context += "Reference repositories (read-only except the active workspace):\n" + "\n".join(str(path) for path in references) + "\n"
         if manifest:

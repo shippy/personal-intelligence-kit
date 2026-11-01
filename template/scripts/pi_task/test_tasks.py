@@ -78,6 +78,13 @@ class MultiRepositoryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             task_directory(self.state_root, "../../escape")
 
+    def test_task_manifest_can_be_loaded_without_notes(self):
+        repository = self.repositories[0]
+        self.assertEqual(resolve_repository(str(repository), [], self.vault, None, self.state_root), repository)
+        add_repositories(self.directory, self.manifest, [repository])
+        loaded = load_manifest(self.directory, self.vault, None, self.state_root)
+        self.assertEqual(loaded["repositories"][0]["repository"], str(repository))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -13,12 +13,14 @@ def git(root, *args):
 
 
 def overlap(first, second):
+    if first is None or second is None:
+        return False
     return first == second or first in second.parents or second in first.parents
 
 
 def discover(cwd, vault, para):
     cwd = cwd.resolve(strict=True)
-    if cwd == para or para in cwd.parents:
+    if para is not None and (cwd == para or para in cwd.parents):
         raise ValueError("PARA is a reference source. Launch pi-task from the AI vault or an actioning project.")
     if cwd == vault or vault in cwd.parents:
         return "pkm", vault

@@ -1,10 +1,14 @@
 from pathlib import Path
+from contextlib import ExitStack, redirect_stdout
+import io
+import json
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from pi_task.cli import discover, session_state
 from pi_task.native import native_policy, reference_repositories, SAFE_ENV
+from pi_task import native
 
 
 class NativePolicyTests(unittest.TestCase):
@@ -81,6 +85,35 @@ class NativePolicyTests(unittest.TestCase):
         for value in ("../project", [None], [""], [str(self.para)], [str(self.root)]):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 reference_repositories({"pi_task": {"reference_repositories": value}}, self.vault, self.para)
+
+    def test_disabled_notes_source_has_no_policy_root(self):
+        for profile, checkout in (("pkm", self.vault), ("project", self.project)):
+            policy = native_policy(profile, checkout, self.vault, None, self.root / "state", self.root / "scratch")
+            self.assertNotIn("None", policy["readable"] + policy["denyWrite"])
+            self.assertIn(str(checkout), policy["readable"])
+            self.assertIn(str(self.root / "state"), policy["denyWrite"])
+        self.assertEqual(discover(self.vault, self.vault, None), ("pkm", self.vault))
+
+    def test_describe_vault_and_project_without_notes(self):
+        extension = self.root / "extension"
+        extension.mkdir()
+        (extension / "index.ts").write_text("// fixture")
+        (extension / "package.json").write_text(json.dumps({"version": "0.1.4"}))
+        (self.vault / "vault.toml").write_text('[notes]\napp = "none"\n')
+        for cwd, profile in ((self.vault, "PKM"), (self.project, "PROJECT")):
+            args = native.parser().parse_args(["--vault", str(self.vault), "--cwd", str(cwd), "--describe"])
+            output = io.StringIO()
+            with patch.object(native, "EXTENSION", extension), patch.object(native.sys, "platform", "darwin"), patch("pi_task.cli.git", return_value=str(self.project)), redirect_stdout(output), ExitStack() as stack:
+                native.run(args, stack)
+            self.assertIn(profile, output.getvalue())
+            self.assertIn("PARA: disabled", output.getvalue())
+            self.assertNotIn('"None"', output.getvalue())
+
+    def test_reference_validation_without_notes_still_protects_ai_vault(self):
+        with patch("pi_task.native.git", return_value=str(self.project)):
+            self.assertEqual(reference_repositories({"pi_task": {"reference_repositories": [str(self.project)]}}, self.vault, None), [self.project])
+        with self.assertRaises(ValueError):
+            reference_repositories({"pi_task": {"reference_repositories": [str(self.vault)]}}, self.vault, None)
 
 
 if __name__ == "__main__":

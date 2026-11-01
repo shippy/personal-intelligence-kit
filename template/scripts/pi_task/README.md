@@ -18,7 +18,9 @@ pi-task --check-model
 Launches inside a subdirectory use the enclosing Git checkout, or the AI vault
 root for PKM. Launching from PARA or a folder without a project is rejected.
 --vault PATH (or PI_TASK_VAULT) selects another AI vault containing vault.toml.
-The default vault is the one containing this installed script.
+The default vault is the one containing this installed script. Notes are optional:
+with `[notes] app = "none"`, vault and project sessions omit the human-notes
+reference and its policy roots.
 
 Shared reference repositories are configured in that vault's vault.toml:
 
