@@ -8,7 +8,7 @@ import stale_drafts as mod
 
 
 def test_empty_report_is_okf_conformant(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     reporter = mod.StaleDraftsOrchestrator.__new__(mod.StaleDraftsOrchestrator)
     reporter.review_date = "2026-06-20"
     path = reporter._generate_empty_report()

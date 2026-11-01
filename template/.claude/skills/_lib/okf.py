@@ -53,13 +53,14 @@ def write_concept(
     tags: list[str] | None = None,
     resource: str | None = None,
     timestamp: str | None = None,
+    out_dir: Path | None = None,
     **extra: Any,
 ) -> Path:
     """Write an OKF concept document and return its path."""
     if slug in RESERVED_SLUGS:
         raise ValueError(f"slug {slug!r} is reserved (index/log)")
     ts = timestamp or datetime.now().strftime("%Y-%m-%d")
-    target_dir = output_dir("root") / subdir
+    target_dir = Path(out_dir) if out_dir is not None else output_dir(subdir)
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"{slug}.md"
     existed = path.exists()
@@ -78,6 +79,7 @@ def write_concept(
 
 
 def _append_log(root: Path, date: str, kind: str, title: str) -> None:
+    root.mkdir(parents=True, exist_ok=True)
     log_path = root / "log.md"
     entry = f"* **{kind}**: {title}"
     existing = log_path.read_text() if log_path.exists() else ""

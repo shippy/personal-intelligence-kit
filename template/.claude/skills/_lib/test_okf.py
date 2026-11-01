@@ -27,7 +27,7 @@ def test_render_frontmatter_escapes_quotes():
 
 
 def test_write_concept_writes_frontmatter_and_body(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     path = okf.write_concept(
         "alerts", "demo",
         type="alert", title="Demo", body="# Demo\n\nhi\n",
@@ -41,13 +41,13 @@ def test_write_concept_writes_frontmatter_and_body(tmp_path, monkeypatch):
 
 
 def test_write_concept_rejects_reserved_slug(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     with pytest.raises(ValueError):
         okf.write_concept("alerts", "index", type="alert", title="x", body="")
 
 
 def test_log_records_creation_then_update(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     okf.write_concept("alerts", "demo", type="alert", title="First",
                       body="x", timestamp="2026-06-20")
     okf.write_concept("alerts", "demo", type="alert", title="First again",
@@ -59,7 +59,7 @@ def test_log_records_creation_then_update(tmp_path, monkeypatch):
 
 
 def test_log_newest_date_first(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     okf.write_concept("alerts", "a", type="alert", title="A", body="x",
                       timestamp="2026-06-19")
     okf.write_concept("alerts", "b", type="alert", title="B", body="x",
@@ -74,7 +74,7 @@ def test_link_makes_bundle_relative_absolute():
 
 
 def test_read_frontmatter_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     path = okf.write_concept("reports", "r", type="report", title="T",
                              body="# T\n", tags=["x"], timestamp="2026-06-20")
     fm = okf.read_frontmatter(path)
@@ -84,10 +84,21 @@ def test_read_frontmatter_roundtrip(tmp_path, monkeypatch):
 
 
 def test_read_frontmatter_unescapes_and_splits(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     path = okf.write_concept("reports", "r", type="report",
                              title='Has "quotes" and, comma', body="x",
                              tags=["a, b", 'c"d'], timestamp="2026-06-20")
     fm = okf.read_frontmatter(path)
     assert fm["title"] == 'Has "quotes" and, comma'
     assert fm["tags"] == ["a, b", 'c"d']
+
+
+def test_custom_category_directory_and_root_changelog(tmp_path, monkeypatch):
+    root = tmp_path / "bundle"
+    custom = tmp_path / "custom" / "reflections"
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": root if name == "root" else custom)
+    path = okf.write_concept("reflections", "week", type="reflection", title="Week", body="Notes")
+    assert path == custom / "week.md"
+    assert path.read_text().endswith("Notes")
+    assert (root / "log.md").exists()
+    assert not (root / "reflections").exists()

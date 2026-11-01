@@ -8,7 +8,7 @@ import intention_reality_gaps as mod
 
 
 def test_intention_report_is_okf_conformant(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
 
     class FakeAnalyzer:
         def find_yearly_goals(self):

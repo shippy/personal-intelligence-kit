@@ -99,5 +99,6 @@ class ReflectionFormatter:
             title=f"Weekly Reflection — {self.review_date}",
             body=content,
             timestamp=self.review_date,
+            out_dir=out_dir,
             status="final",
         )

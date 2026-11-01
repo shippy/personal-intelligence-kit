@@ -8,7 +8,7 @@ import commitment_accountability as mod
 
 
 def test_commitment_report_is_okf_conformant(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     monkeypatch.setattr(mod, "source_enabled", lambda s: True)
     monkeypatch.setattr(mod, "activity_log", lambda: tmp_path / "activity.md")
 

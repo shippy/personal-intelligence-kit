@@ -8,7 +8,7 @@ import analyze
 
 
 def test_session_docs_are_okf_conformant(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     paths = analyze.write_session_docs(
         active=[], dormant=[], cluster_stats={}, date="2026-06-20", dormant_days=14
     )

@@ -18,7 +18,7 @@ def _min_reflection():
 
 
 def test_reflection_is_okf_conformant(tmp_path, monkeypatch):
-    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path)
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     monkeypatch.setattr(output_formatter, "owner_name", lambda: "Alex")
     fmt = ReflectionFormatter()
     body = fmt.format(_min_reflection())
@@ -28,3 +28,16 @@ def test_reflection_is_okf_conformant(tmp_path, monkeypatch):
     assert fm["title"]
     assert (tmp_path / "log.md").exists()
     assert not body.startswith("---")  # frontmatter no longer in the body
+
+
+def test_explicit_reflection_directory_is_preserved(tmp_path, monkeypatch):
+    root = tmp_path / "bundle"
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": root / name if name != "root" else root)
+    monkeypatch.setattr(output_formatter, "owner_name", lambda: "Alex")
+    fmt = ReflectionFormatter()
+    explicit = tmp_path / "requested-destination"
+    path = fmt.save(fmt.format(_min_reflection()), explicit)
+    assert path == explicit / f"{fmt.review_date}-weekly-reflection.md"
+    assert okf.read_frontmatter(path)["type"] == "reflection"
+    assert (root / "log.md").exists()
+    assert not (root / "reflections").exists()

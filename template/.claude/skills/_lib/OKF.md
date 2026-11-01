@@ -17,6 +17,13 @@ guarantees conformance — do not hand-roll frontmatter in a writer.
 | `resource` | recommended | Canonical URI (usually omitted for generated reports). |
 | `status`, `sources`, … | custom | Preserved as-is via `**extra`; consumers must keep unknown keys. |
 
+## Output destinations
+
+`write_concept` resolves the named category through `vault_config.output_dir`,
+so overrides such as `[output].reflections` are preserved. Callers can supply
+`out_dir` for an explicit destination. The changelog remains at
+`output_dir("root") / "log.md"`, even when a category lives elsewhere.
+
 ## Links
 
 Use `okf.link(target, text)` for cross-links between concepts. It produces
