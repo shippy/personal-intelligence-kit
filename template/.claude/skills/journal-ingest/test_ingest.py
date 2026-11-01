@@ -272,6 +272,45 @@ def test_legacy_format_without_extra_sections_still_parses(tmp_path):
     assert any("TV gift" in e.body for e in entries)
 
 
+def test_entry_heading_preserves_remaining_content_and_later_sessions(tmp_path):
+    text = NEW_FORMAT_SAMPLE.replace(
+        "# Drafts",
+        "# Gratitude\n\nThanks for the helpful feedback.\n\n"
+        "## A second real entry\n### Thursday, August 6th, 2026\n\n"
+        "#### Entry\n\n**Alex Example:** Finished the garden plan.\n\n"
+        "# Goals\n\nFinish the treehouse.\n\n# Drafts",
+        1,
+    )
+    f = tmp_path / "rosebud-2026-08-10.md"
+    f.write_text(text)
+    entries = ingest.parse_rosebud_file(f)
+    assert any("# Gratitude" in e.body and "helpful feedback" in e.body for e in entries)
+    assert any("garden plan" in e.body and e.date == "2026-08-06" for e in entries)
+    assert any("# Goals" in e.body and "treehouse" in e.body for e in entries)
+    assert not any("Bayesian" in e.body or "delayed workshop" in e.body for e in entries)
+
+
+def test_legacy_entry_heading_is_not_an_export_boundary(tmp_path):
+    text = ROSEBUD_SAMPLE.replace("# 🌹 Rosebud entries\n", "", 1).replace(
+        "At the reunion, i discovered the group chat.",
+        "At the reunion, i discovered the group chat.\n\n# Goals\n\nKeep in touch.",
+    )
+    assert ingest.rosebud_entries_section(text) == text
+    f = tmp_path / "legacy-2026-06-02.md"
+    f.write_text(text)
+    entries = ingest.parse_rosebud_file(f)
+    assert any("Keep in touch" in e.body for e in entries)
+    assert any("TV gift" in e.body for e in entries)
+
+
+def test_empty_export_sections_are_excluded(tmp_path):
+    text = NEW_FORMAT_SAMPLE.split("# Drafts", 1)[0] + "# Drafts\n\n# Goals\n\n# Weekly reports\n"
+    section = ingest.rosebud_entries_section(text)
+    assert "community project is wonderful" in section
+    assert "# Drafts" not in section
+    assert "# Goals" not in section
+
+
 # --- _migrate_legacy_dedup ---
 
 def test_migrate_collapses_legacy_filename_duplicates(tmp_path):

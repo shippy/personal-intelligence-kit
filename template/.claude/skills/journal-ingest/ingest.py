@@ -159,7 +159,14 @@ def parse_rosebud_date(text: str) -> str | None:
 
 
 ROSEBUD_ENTRIES_HEADING_RE = re.compile(r"^#[^\n#]*Rosebud entries[^\n]*$", re.MULTILINE)
-TOP_LEVEL_HEADING_RE = re.compile(r"^# ", re.MULTILINE)
+TRAILING_EXPORT_SECTION_RE = re.compile(
+    r"^# (Drafts|Goals|Weekly reports)[ \t]*$", re.MULTILINE | re.IGNORECASE
+)
+EXPORT_SECTION_METADATA = {
+    "drafts": r"^\*\*(?:Last edited|Journal day):\*\*",
+    "goals": r"^\*\*(?:Status|Created):\*\*",
+    "weekly reports": r"^\*\*(?:Period|Generated):\*\*",
+}
 
 
 def rosebud_entries_section(text: str) -> str:
@@ -174,9 +181,25 @@ def rosebud_entries_section(text: str) -> str:
     where this is a no-op.
     """
     m = ROSEBUD_ENTRIES_HEADING_RE.search(text)
-    start = m.end() if m else 0
-    nxt = TOP_LEVEL_HEADING_RE.search(text, start)
-    return text[start:nxt.start()] if nxt else text[start:]
+    if not m:
+        return text
+    start = m.end()
+    for boundary in TRAILING_EXPORT_SECTION_RE.finditer(text, start):
+        remaining = text[boundary.end():]
+        next_heading = re.search(r"^# ", remaining, re.MULTILINE)
+        section = remaining[:next_heading.start()] if next_heading else remaining
+        # Entry prose can itself contain headings, even '# Goals'. Require the
+        # export's section metadata, or an empty section followed by another
+        # export section/end-of-file, before treating a heading as a boundary.
+        empty_export = not section.strip() and (
+            next_heading is None
+            or TRAILING_EXPORT_SECTION_RE.match(remaining, next_heading.start())
+        )
+        if empty_export or re.search(
+            EXPORT_SECTION_METADATA[boundary.group(1).lower()], section, re.MULTILINE
+        ):
+            return text[start:boundary.start()]
+    return text[start:]
 
 
 @dataclass
