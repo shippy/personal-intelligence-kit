@@ -11,17 +11,17 @@ Surface {{ owner_name }}'s **most finishable drafts** and rank them for writing 
 
 ```bash
 cd .claude/skills/stale-drafts
-uv run --env-file ../../.env stale_drafts.py
+op run --env-file=../../../.env -- uv run stale_drafts.py
 ```
 
 Or from the vault root:
 ```bash
-uv run --env-file .env .claude/skills/stale-drafts/stale_drafts.py
+op run --env-file=.env -- uv run --project .claude/skills/stale-drafts .claude/skills/stale-drafts/stale_drafts.py
 ```
 
 Or via Claude Code: `batch: stale-drafts`
 
-The `--env-file` flag passes `ANTHROPIC_API_KEY` from `.env` so the LLM assessment works. Without it, the skill falls back to heuristic-only ranking.
+`op run` resolves the `ANTHROPIC_API_KEY` reference from `.env` through 1Password. Without an API key, the skill falls back to heuristic-only ranking.
 
 ## What It Does
 

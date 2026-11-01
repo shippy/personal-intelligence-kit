@@ -32,7 +32,7 @@ class StaleDraftsOrchestrator:
         self.review_date = datetime.now().strftime("%Y-%m-%d")
         self.data_sources_used: list[str] = []
 
-        # ANTHROPIC_API_KEY should be in env via: uv run --env-file .env
+        # ANTHROPIC_API_KEY should be in env via: op run --env-file=.env -- uv run
         # Also accepts CLAUDE_API_KEY as alias (avoids conflict with Claude Code's own env)
         self.llm_available = bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY"))
         if not self.llm_available:
