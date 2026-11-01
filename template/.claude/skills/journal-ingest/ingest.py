@@ -158,6 +158,27 @@ def parse_rosebud_date(text: str) -> str | None:
     return None
 
 
+ROSEBUD_ENTRIES_HEADING_RE = re.compile(r"^#[^\n#]*Rosebud entries[^\n]*$", re.MULTILINE)
+TOP_LEVEL_HEADING_RE = re.compile(r"^# ", re.MULTILINE)
+
+
+def rosebud_entries_section(text: str) -> str:
+    """Return only the journal-entries portion of a Rosebud export.
+
+    Newer exports wrap the entries in an `Exported:` preamble and append
+    `# Drafts`, `# Goals`, and `# Weekly reports` sections after them. Those
+    sections reuse the same `## `/`### ` heading depths as entries, so the chunk
+    splitter would otherwise ingest draft timestamps, goal blurbs, and weekly
+    report prose as journal entries — each misdated to whatever ISO timestamp
+    happened to appear first in its chunk. Older exports carry no such sections,
+    where this is a no-op.
+    """
+    m = ROSEBUD_ENTRIES_HEADING_RE.search(text)
+    start = m.end() if m else 0
+    nxt = TOP_LEVEL_HEADING_RE.search(text, start)
+    return text[start:nxt.start()] if nxt else text[start:]
+
+
 @dataclass
 class Entry:
     date: str  # ISO
@@ -173,7 +194,7 @@ def parse_rosebud_file(path: Path) -> list[Entry]:
     Within the #### Entry section, speaker turns are marked as **Name:** lines.
     We split these into separate entries so analysis can filter by speaker.
     """
-    text = path.read_text(errors="ignore")
+    text = rosebud_entries_section(path.read_text(errors="ignore"))
     entries = []
     # Rosebud format: sessions split by "## " headers
     chunks = re.split(r"\n(?=## )", text)
