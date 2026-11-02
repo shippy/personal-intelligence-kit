@@ -1,55 +1,75 @@
+{%- from 'template/config/_paths.jinja' import logic, launchd_logs, reflections_dir, sync_needs_secrets with context -%}
 # Scheduled Tasks
 
 This directory contains templates for running sync and reflection on a schedule.
 
 ## macOS (launchd)
 
-Two `.plist` files are provided:
+| File | Schedule | What it runs | Secrets |
+|------|----------|--------------|---------|
+| `com.claude.daily-sync.plist` | Daily at 20:00 | `data-sync` skill | {% if sync_needs_secrets %}yes: wrapped in `op run` (Todoist token){% else %}none: plain `uv run`{% endif %} |
+{%- if schedule_reflection %}
+| `com.claude.weekly-reflect.plist` | Sunday at 09:00 | `weekly-reflection` skill | yes: `op run` (LLM API key) |
+{%- endif %}
+{%- if reflection_reminder %}
+| `com.claude.reflection-reminder.plist` | Sunday at 10:00 | `scripts/reflection-reminder.sh` | none |
+{%- endif %}
 
-| File | Schedule | What it runs |
-|------|----------|--------------|
-| `com.claude.daily-sync.plist` | Daily at 20:00 | `data-sync` skill |
-| `com.claude.weekly-reflect.plist` | Sunday at 09:00 | `weekly-reflection` skill |
+{% if sync_needs_secrets -%}
+The daily sync needs the Todoist token, so it runs through `op run`. Scheduled runs
+need unattended 1Password authentication; interactive unlock prompts fail under launchd.
+{%- else -%}
+The daily sync needs no secrets (mbsync uses the Keychain, Microsoft To-Do uses the
+msal token cache), so it runs `uv run` directly: no `op run`, no `.env`, no unlock prompt.
+{%- endif %}
+{%- if not schedule_reflection %}
+
+The weekly reflection is **attended**: run it yourself (it calls an LLM via `op run`).
+{%- if reflection_reminder %} The reminder notifies you on Sunday if no
+`*-weekly-reflection.md` in `{{ reflections_dir }}` is newer than 6 days, and stays
+silent otherwise.{% endif %} To schedule it instead, re-run `copier update` with
+`schedule_reflection=true`.
+{%- endif %}
+
+The plists use Homebrew paths for `uv`{% if sync_needs_secrets or schedule_reflection %} and `op`{% endif %}; adjust them to your installation.
 
 ### Install
 
-Install the 1Password CLI (`op`) and authorize access to the referenced secrets.
-Scheduled runs need unattended 1Password authentication; interactive unlock prompts
-will fail under launchd or cron. The generated plists use Homebrew paths for `op`
-and `uv`; adjust them to match your installation. Keep credentials in 1Password.
-
 ```bash
-# Copy plists into LaunchAgents
-cp config/com.claude.daily-sync.plist ~/Library/LaunchAgents/
-cp config/com.claude.weekly-reflect.plist ~/Library/LaunchAgents/
-
-# Load
-launchctl load ~/Library/LaunchAgents/com.claude.daily-sync.plist
-launchctl load ~/Library/LaunchAgents/com.claude.weekly-reflect.plist
-
-# Verify
+mkdir -p {{ launchd_logs | quote }}
+# Only the jobs enabled for this vault (`copier update` never deletes a plist that is
+# no longer generated, so a stale one may still sit in config/).
+for job in daily-sync{% if schedule_reflection %} weekly-reflect{% endif %}{% if reflection_reminder %} reflection-reminder{% endif %}; do
+  cp "config/com.claude.$job.plist" ~/Library/LaunchAgents/
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude.$job.plist
+done
 launchctl list | grep com.claude
 ```
+{%- if not schedule_reflection %}
+
+If an older version installed `com.claude.weekly-reflect`, the uninstall loop below removes it;
+delete `config/com.claude.weekly-reflect.plist` too.
+{%- endif %}
+
+Run a job once now: `launchctl kickstart -k gui/$(id -u)/com.claude.daily-sync`.
 
 ### Logs
 
-- Daily sync: `logs/sync-stdout.log`, `logs/sync-stderr.log`
-- Weekly reflect: `logs/reflect-stdout.log`, `logs/reflect-stderr.log`
+All launchd logs go to `{{ launchd_logs }}/` (`sync-*.log`{% if schedule_reflection %}, `reflect-*.log`{% endif %}{% if reflection_reminder %}, `reflection-reminder-*.log`{% endif %}).
 
 ### Uninstall
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.claude.daily-sync.plist
-launchctl unload ~/Library/LaunchAgents/com.claude.weekly-reflect.plist
-rm ~/Library/LaunchAgents/com.claude.daily-sync.plist
-rm ~/Library/LaunchAgents/com.claude.weekly-reflect.plist
+for p in ~/Library/LaunchAgents/com.claude.*.plist; do
+  launchctl bootout gui/$(id -u) "$p" && rm "$p"
+done
 ```
 
 ### Prerequisite: Full Disk Access
 
 On recent macOS, the launchd-spawned process needs Full Disk Access to read email, browser, and other sources. Grant it to:
 
-- `/opt/homebrew/bin/op` and `/opt/homebrew/bin/uv` (the binaries invoked by the plist)
+- `/opt/homebrew/bin/uv`{% if sync_needs_secrets or schedule_reflection %} and `/opt/homebrew/bin/op`{% endif %} (the binaries invoked by the plists)
 - Or Terminal.app if you prefer to run manually
 
 System Settings → Privacy & Security → Full Disk Access.
@@ -70,18 +90,13 @@ For multiple run times, make `StartCalendarInterval` an array of dicts.
 
 ## Linux (cron)
 
-Use `crontab.example` instead. Install with:
-
-```bash
-crontab -e
-# then paste the lines from config/crontab.example
-```
+Use `crontab.example` instead (`crontab -e`, then paste its lines).
 
 ## Manual Runs
 
-Any time:
+Any time, from `{{ logic }}`:
 
 ```bash
-op run --env-file=.env -- uv run .claude/skills/data-sync/sync_all.py --yes
+{% if sync_needs_secrets %}op run --env-file=.env -- {% endif %}uv run .claude/skills/data-sync/sync_all.py --yes
 op run --env-file=.env -- uv run --project .claude/skills/weekly-reflection .claude/skills/weekly-reflection/weekly_reflection.py
 ```

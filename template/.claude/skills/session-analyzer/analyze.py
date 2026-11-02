@@ -29,8 +29,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import (  # noqa: E402
     load_config,
     source_enabled,
-    vault_root,
+    browser_db_path,
     output_dir,
+    content_link,
     activity_log,
 )
 import okf  # noqa: E402
@@ -100,7 +101,7 @@ def main():
         print("Browser source not enabled.")
         return 1
 
-    db = vault_root() / "data" / "browser-history.db"
+    db = browser_db_path()
     if not db.exists():
         print("No browser history data found. Run browser-ingest first.")
         return 1
@@ -168,7 +169,7 @@ def main():
         f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
         f.write("**Action:** Session health check\n")
         f.write(f"**Active clusters:** {len(active)}, **Dormant:** {len(dormant)}\n")
-        f.write(f"**Output:** [[output/alerts/session-health-{date}]]\n\n---\n")
+        f.write(f"**Output:** [[{content_link(output_dir('alerts') / f'session-health-{date}.md')}]]\n\n---\n")
 
     return 0
 

@@ -1,3 +1,4 @@
+{%- from 'template/config/_paths.jinja' import logic, launchd_logs, reflections_dir, sync_needs_secrets with context -%}
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -9,13 +10,13 @@
     <array>
         <string>/opt/homebrew/bin/op</string>
         <string>run</string>
-        <string>--env-file={{ vault_path }}/.env</string>
+        <string>--env-file={{ logic | e }}/.env</string>
         <string>--</string>
         <string>/opt/homebrew/bin/uv</string>
         <string>run</string>
         <string>--project</string>
-        <string>{{ vault_path }}/.claude/skills/weekly-reflection</string>
-        <string>{{ vault_path }}/.claude/skills/weekly-reflection/weekly_reflection.py</string>
+        <string>{{ logic | e }}/.claude/skills/weekly-reflection</string>
+        <string>{{ logic | e }}/.claude/skills/weekly-reflection/weekly_reflection.py</string>
     </array>
 
     <key>StartCalendarInterval</key>
@@ -29,13 +30,13 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>{{ vault_path }}</string>
+    <string>{{ logic | e }}</string>
 
     <key>StandardOutPath</key>
-    <string>{{ vault_path }}/logs/reflect-stdout.log</string>
+    <string>{{ launchd_logs | e }}/reflect-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>{{ vault_path }}/logs/reflect-stderr.log</string>
+    <string>{{ launchd_logs | e }}/reflect-stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

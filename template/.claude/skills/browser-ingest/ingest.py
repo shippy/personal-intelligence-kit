@@ -21,17 +21,19 @@ import argparse
 import shutil
 import sqlite3
 import sys
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import (  # noqa: E402
+    assert_writable,
     load_config,
     source_enabled,
     browser_history_path,
     browser_type,
-    vault_root,
+    browser_db_path,
     activity_log,
 )
 
@@ -82,14 +84,18 @@ def main():
         print("On macOS you may need Full Disk Access for your terminal.")
         return 1
 
-    # Copy live DB (it's locked while browser runs)
-    tmp = Path("/tmp/pik_browser_ingest.db")
-    try:
-        shutil.copy2(src, tmp)
-    except Exception as e:
-        print(f"Failed to copy {src}: {e}")
-        return 1
+    # Copy live DB (it's locked while browser runs) into a private temp dir
+    with tempfile.TemporaryDirectory(prefix="pik_browser_ingest_") as tmpdir:
+        tmp = Path(tmpdir) / "History"
+        try:
+            shutil.copy2(src, tmp)
+        except Exception as e:
+            print(f"Failed to copy {src}: {e}")
+            return 1
+        return _ingest(args, tmp)
 
+
+def _ingest(args, tmp: Path) -> int:
     # Read from copy
     src_conn = sqlite3.connect(tmp)
     src_conn.row_factory = sqlite3.Row
@@ -110,7 +116,7 @@ def main():
         )
 
     # Prepare output DB
-    out_path = vault_root() / "data" / "browser-history.db"
+    out_path = assert_writable(browser_db_path())
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.exists():
         out_path.unlink()
@@ -148,7 +154,6 @@ def main():
     out_conn.commit()
     out_conn.close()
     src_conn.close()
-    tmp.unlink(missing_ok=True)
 
     print(f"Imported {imported} visits ({skipped} noise filtered) → {out_path}")
 

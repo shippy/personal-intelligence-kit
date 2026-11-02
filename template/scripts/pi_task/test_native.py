@@ -33,6 +33,95 @@ class NativePolicyTests(unittest.TestCase):
         (self.vault / "working").mkdir()
         self.assertEqual(discover(self.vault / "working", self.vault, self.para), ("pkm", self.vault))
 
+    def test_content_dirs_default_to_single_dir_layout(self):
+        dirs = native.content_dirs({}, self.vault)
+        self.assertEqual(dirs, {"root": self.vault, **{name: self.vault / name for name in ("output", "working", "data", "logs")}, "deliverables": [self.vault / "output"], "changelog": None,
+                                "state": None, "activity": self.vault / "logs" / "activity.md", "notes": None,
+                                "databases": []})
+
+    def test_host_state_and_activity_log_are_protected(self):
+        content = self.root / "content"
+        dirs = native.content_dirs({"paths": {"content_root": str(content), "state_root": str(content / "output" / "private")}}, self.vault)
+        with self.assertRaises(ValueError):  # state inside a writable root
+            native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        dirs = native.content_dirs({"paths": {"content_root": str(content), "state_root": "host-state"}}, self.vault)
+        policy = native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        self.assertIn(str(self.vault / "host-state"), policy["denyRead"])
+        self.assertIn(str(self.vault / "host-state"), policy["denyWrite"])
+        self.assertIn(str(content / "logs" / "activity.md"), policy["denyWrite"])
+
+    def test_symlinked_writable_root_is_refused(self):
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        (self.vault / "output").symlink_to(elsewhere)
+        with self.assertRaises(ValueError):
+            native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=native.content_dirs({}, self.vault))
+
+    def test_database_overrides_are_write_denied(self):
+        dirs = native.content_dirs({"data": {"browser": "working/browser-history.db"}}, self.vault)
+        policy = native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        self.assertIn(str(self.vault / "working"), policy["writable"])
+        self.assertIn(str(self.vault / "working" / "browser-history.db"), policy["denyWrite"])
+
+    def test_notes_root_matches_skill_resolution(self):
+        content = self.root / "content"
+        dirs = native.content_dirs({"paths": {"content_root": str(content), "notes_root": "Notes"}}, self.vault)
+        self.assertEqual(dirs["notes"], self.vault / "Notes")
+        dirs = native.content_dirs({"paths": {"content_root": str(content)}, "notes": {"vault_path": "Notes"}}, self.vault)
+        self.assertEqual(dirs["notes"], content / "Notes")
+
+    def test_content_dirs_resolve_symlinks_like_skills(self):
+        real = self.root / "real-content"
+        real.mkdir()
+        (self.root / "link").symlink_to(real)
+        dirs = native.content_dirs({"paths": {"content_root": str(self.root / "link" / ".." / "real-content")}}, self.vault)
+        self.assertEqual(dirs["root"], (self.root / "link" / ".." / "real-content").resolve())
+
+    def test_split_layout_policy_uses_content_root(self):
+        content = self.root / "content"
+        config = {"paths": {"content_root": str(content)}, "output": {"root": "."}}
+        dirs = native.content_dirs(config, self.vault)
+        self.assertEqual(dirs["output"], content)
+        self.assertEqual(dirs["data"], content / "data")
+        pkm = native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        self.assertEqual(pkm["writable"], [str(content / "log.md"), str(content / "working"), str(content / "logs"), str(self.root / "scratch")])
+        self.assertNotIn(str(content), pkm["writable"])
+        self.assertIn(str(content / "data"), pkm["denyWrite"])
+        self.assertIn(str(content / "data"), pkm["readable"])
+        self.assertNotIn(str(self.vault / "output"), pkm["readable"])
+        project = native_policy("project", self.project, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        self.assertIn(str(content), project["denyWrite"])
+        self.assertIn(str(self.vault), project["denyWrite"])
+
+    def test_flattened_output_grants_only_deliverable_dirs(self):
+        config = {"output": {"root": ".", "reports": "reports", "alerts": "alerts", "reflections": "reflections"}}
+        for content_root in (None, str(self.root / "content")):
+            with self.subTest(content_root=content_root):
+                cfg = {**config, **({"paths": {"content_root": content_root}} if content_root else {})}
+                dirs = native.content_dirs(cfg, self.vault)
+                root = dirs["root"]
+                policy = native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+                expected = [root / "reports", root / "alerts", root / "reflections", root / "log.md", root / "working", root / "logs", self.root / "scratch"]
+                self.assertEqual(policy["writable"], [str(path) for path in expected])
+                self.assertNotIn(str(root), policy["writable"])
+                self.assertNotIn(str(self.vault), policy["writable"])
+                self.assertIn(str(root / "data"), policy["denyWrite"])
+
+    def test_prepare_writable_keeps_changelog_a_file(self):
+        content = self.root / "content"
+        dirs = native.content_dirs({"paths": {"content_root": str(content)}, "output": {"root": ".", "reports": "reports"}}, self.vault)
+        policy = native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        native.prepare_writable(policy["writable"], [dirs["changelog"]])
+        self.assertTrue((content / "reports").is_dir())
+        self.assertFalse((content / "log.md").exists())
+        (content / "log.md").write_text("## 2026-11-02\n")
+        native.prepare_writable(policy["writable"], [dirs["changelog"]])  # existing file: no FileExistsError
+        self.assertTrue((content / "log.md").is_file())
+
+    def test_relative_content_root_resolves_against_vault(self):
+        dirs = native.content_dirs({"paths": {"content_root": "../content"}}, self.vault)
+        self.assertEqual(dirs["root"], self.root / "content")
+
     def test_pkm_writes_only_output_working_logs_and_scratch(self):
         policy = self.policy("pkm", self.vault)
         self.assertEqual(policy["writable"], [str(self.vault / name) for name in ("output", "working", "logs")] + [str(self.root / "scratch")])

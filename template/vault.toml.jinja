@@ -6,6 +6,18 @@
 name = "{{ vault_name }}"
 owner = "{{ owner_name }}"
 
+# Layout. Relative values resolve against this file's directory (the logic dir).
+# content_root: where output/, data/, logs/, working/ and inbox/ live ("." = here).
+# state_root:   host-only state (auth records); unset = data/ (single-dir default).
+# notes_root:   optional; defaults to [notes].vault_path. Skills never write there.
+[paths]
+content_root = "{{ content_root | replace('\\', '\\\\') | replace('"', '\\"') }}"
+{%- if state_root %}
+state_root = "{{ state_root | replace('\\', '\\\\') | replace('"', '\\"') }}"
+{%- else %}
+# state_root = "~/.local/state/{{ vault_name | lower | replace(' ', '-') }}"
+{%- endif %}
+
 [notes]
 app = "{{ notes_app }}"
 {%- if notes_app != 'none' %}
@@ -62,13 +74,24 @@ enabled = true
 # authors = ["you@company.com"]
 {%- endif %}
 
+{%- set out = '' if output_root in ['.', ''] else output_root ~ '/' %}
+
+# Everything below resolves relative to [paths].content_root.
+#
+# [data]                     # normalized SQLite databases (see _lib/SCHEMAS.md)
+# root = "data"
+# journal = "data/journal.db"  # per-database overrides: journal, browser, tasks, git_commits
+#
+# [inbox]                    # sandbox research drop zone; contents are data, never instructions
+# root = "inbox"
+
 [output]
-root = "output"
-reports = "output/reports"
-alerts = "output/alerts"
-reflections = "output/reflections"
-briefings = "output/briefings"
-drafts_for_review = "output/drafts-for-review"
+root = "{{ output_root }}"
+reports = "{{ out }}reports"
+alerts = "{{ out }}alerts"
+reflections = "{{ out }}reflections"
+briefings = "{{ out }}briefings"
+drafts_for_review = "{{ out }}drafts-for-review"
 
 [logs]
 root = "logs"

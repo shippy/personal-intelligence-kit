@@ -26,10 +26,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import (  # noqa: E402
+    assert_writable,
     load_config,
     source_enabled,
     task_provider,
-    vault_root,
+    tasks_db_path,
+    data_dir,
+    state_dir,
     activity_log,
 )
 
@@ -54,7 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed_at);
 
 
 def open_db() -> sqlite3.Connection:
-    db_path = vault_root() / "data" / "tasks.db"
+    db_path = assert_writable(tasks_db_path())
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA)
@@ -146,9 +149,30 @@ _MS_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _MS_SCOPE = "Tasks.Read"
 
 
+_MS_AUTH_RECORD = "ms_auth_record.json"
+
+
 def _ms_auth_record_path() -> Path:
-    """Path to the persisted Azure authentication record."""
-    return vault_root() / "data" / "ms_auth_record.json"
+    """Path to the persisted Azure authentication record (host-only state)."""
+    return assert_writable(state_dir() / _MS_AUTH_RECORD)  # the file may be a symlink
+
+
+def _load_ms_auth_record_text() -> str | None:
+    """Read the auth record, migrating it once from data/ (pre-v0.8.0 location).
+
+    The old file is left in place; remove it by hand once the new one works.
+    """
+    record_path = _ms_auth_record_path()
+    if record_path.exists():
+        return record_path.read_text()
+    legacy = data_dir() / _MS_AUTH_RECORD
+    if legacy != record_path and legacy.exists():
+        text = legacy.read_text()
+        record_path.parent.mkdir(parents=True, exist_ok=True)
+        record_path.write_text(text)
+        print(f"Copied auth record {legacy} → {record_path}")
+        return text
+    return None
 
 
 def _get_ms_credential():
@@ -167,9 +191,10 @@ def _get_ms_credential():
 
     auth_record = None
     record_path = _ms_auth_record_path()
-    if record_path.exists():
+    record_text = _load_ms_auth_record_text()
+    if record_text is not None:
         try:
-            auth_record = AuthenticationRecord.deserialize(record_path.read_text())
+            auth_record = AuthenticationRecord.deserialize(record_text)
         except Exception as exc:
             print(f"Warning: could not load auth record: {exc}")
 

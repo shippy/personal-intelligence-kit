@@ -41,16 +41,69 @@ def reference_repositories(config, vault, para):
     return references
 
 
-def native_policy(profile, checkout, vault, para, state_root, temporary, references=(), task_roots=()):
+def content_dirs(config, vault):
+    """Content directories from vault.toml, mirroring _lib/vault_config.py (stdlib only).
+
+    [paths].content_root resolves against the vault (logic) dir; output/working/data/logs
+    roots resolve against the content root. Defaults reproduce the single-dir layout.
+    """
+    def resolve(base, raw, leaf=True):
+        path = Path(raw).expanduser()
+        path = path if path.is_absolute() else base / path
+        if leaf or path.name in ("", ".", ".."):
+            return path.resolve()  # same as vault_config: symlinks first
+        # Writable roots: resolve the parent but keep the last component, so native_policy
+        # still sees (and refuses) a symlinked output/working/logs dir.
+        return path.parent.resolve() / path.name
+    paths = config.get("paths", {})
+    root = resolve(vault, paths.get("content_root") or ".")
+    dirs = {"root": root, **{name: resolve(root, config.get(name, {}).get("root", name), leaf=name == "data") for name in ("output", "working", "data", "logs")}}
+    data = config.get("data", {})
+    dirs["databases"] = [resolve(root, value) for key, value in data.items() if key != "root" and isinstance(value, str)]
+    # Host-only files the sandbox must not touch: configured state (auth records) and the activity log.
+    dirs["state"] = resolve(vault, paths["state_root"]) if paths.get("state_root") else None
+    dirs["activity"] = resolve(root, config.get("logs", {}).get("activity", "logs/activity.md"))
+    # Notes vault, as the skills' write guard sees it: [paths].notes_root against the logic dir,
+    # else [notes].vault_path against the content root.
+    if paths.get("notes_root"):
+        dirs["notes"] = resolve(vault, paths["notes_root"])
+    else:
+        raw = config.get("notes", {}).get("vault_path")
+        dirs["notes"] = resolve(root, raw) if raw else None
+    output = dirs["output"]
+    if output in (root, vault) or any(output in dirs[name].parents or output == dirs[name] for name in ("working", "data", "logs")) or output in vault.parents:
+        # Flattened output (output.root = "."): never grant the whole content/logic root,
+        # only the configured deliverable dirs and the OKF changelog.
+        named = [resolve(root, value, leaf=False) for key, value in config.get("output", {}).items() if key != "root" and isinstance(value, str)]
+        dirs["deliverables"] = [path for path in dict.fromkeys(named) if path not in (root, vault)]
+        dirs["changelog"] = output / "log.md"
+    else:
+        dirs["deliverables"] = [output]
+        dirs["changelog"] = None
+    return dirs
+
+
+def prepare_writable(writable, files=()):
+    """Create writable roots before the sandbox starts. File entries (the OKF changelog) only get their parent."""
+    files = {str(path) for path in files}
+    for path in writable:
+        target = Path(path)
+        (target.parent if str(path) in files else target).mkdir(parents=True, exist_ok=True)
+
+
+def native_policy(profile, checkout, vault, para, state_root, temporary, references=(), task_roots=(), dirs=None):
+    dirs = dirs or content_dirs({}, vault)
     project_roots = list(task_roots) if task_roots else [checkout]
     notes_roots = [para] if para is not None else []
-    readable = [*project_roots, *notes_roots, vault / "output", vault / "working", vault / "data", ASSETS, *references]
+    readable = [*project_roots, *notes_roots, dirs["output"], dirs["working"], dirs["data"], ASSETS, *references]
     readable += [Path(path) for path in ("/bin", "/sbin", "/usr", "/System", "/Library", "/opt/homebrew", "/etc", "/private/etc", "/dev/null", "/dev/urandom")]
-    writable = [vault / name for name in ("output", "working", "logs")] if profile == "pkm" else project_roots
+    changelog = [dirs["changelog"]] if dirs.get("changelog") else []
+    writable = [*dirs["deliverables"], *changelog, dirs["working"], dirs["logs"]] if profile == "pkm" else project_roots
+    host_state = [dirs["state"]] if dirs.get("state") else []
     for path in writable:
-        if path.is_symlink() or overlap(path.resolve(), para) or overlap(path.resolve(), state_root):
+        if path.is_symlink() or any(overlap(path.resolve(), root) for root in (para, state_root, *host_state)):
             raise ValueError(f"Unsafe writable root: {path}")
-    forbidden = [*notes_roots, state_root, ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
+    forbidden = [*notes_roots, state_root, *host_state, dirs["data"], *dirs.get("databases", []), ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
     forbidden += [root / name for root in project_roots for name in (".git", ".pi", ".agents", ".claude")]
     forbidden += [path for path in references if not (profile == "project" and any(path == root or path in root.parents for root in project_roots))]
     for root in project_roots:
@@ -60,8 +113,11 @@ def native_policy(profile, checkout, vault, para, state_root, temporary, referen
             pass
     secrets = [Path.home() / name for name in (".ssh", ".aws", ".gnupg", ".config/gcloud", ".netrc", ".git-credentials", ".pi/agent/auth.json")]
     secrets += [root / name for root in (*project_roots, vault, *references) for name in (".env", ".envrc", ".env.local")]
+    secrets += host_state
+    if profile == "pkm" and dirs.get("activity"):
+        forbidden.append(dirs["activity"])  # host-only log; sandboxes must not forge entries
     if profile == "project":
-        forbidden += [vault]
+        forbidden += [vault] + ([dirs["root"]] if dirs["root"] != vault else [])
     return {
         "enabled": True, "failClosed": True,
         "readable": [str(path) for path in readable] + [str(temporary)],
@@ -103,12 +159,14 @@ def run(args, stack):
     vault = args.vault.expanduser().resolve(strict=True)
     config = tomllib.loads((vault / "vault.toml").read_text())
     notes = config.get("notes", {})
+    dirs = content_dirs(config, vault)
     para = None
     if notes.get("app", "none") != "none":
-        if not notes.get("vault_path"):
-            raise ValueError("notes.vault_path is required when a notes source is enabled")
-        para = Path(notes["vault_path"]).expanduser()
-        para = (para if para.is_absolute() else vault / para).resolve(strict=True)
+        if dirs["notes"] is None:
+            raise ValueError("notes.vault_path (or paths.notes_root) is required when a notes source is enabled")
+        para = dirs["notes"].resolve(strict=True)
+    elif config.get("paths", {}).get("notes_root"):
+        para = dirs["notes"]  # explicit notes root: protect it even without a notes app
     references = reference_repositories(config, vault, para)
     if args.new and args.task or args.repo and not args.new or args.add_repo and not args.task:
         raise ValueError("Use --repo with --new, or --add-repo with --task; --new and --task are exclusive")
@@ -164,7 +222,7 @@ def run(args, stack):
     for root in task_roots:
         print(f"Task write root: {root}", flush=True)
     if args.describe:
-        print(json.dumps(native_policy(profile, checkout, vault, para, state_root, Path(tempfile.gettempdir()) / "pi-task-session", references, task_roots), indent=2))
+        print(json.dumps(native_policy(profile, checkout, vault, para, state_root, Path(tempfile.gettempdir()) / "pi-task-session", references, task_roots, dirs), indent=2))
         return
     provider, model_id, _, models = local_model(Path.home())
     original = json.loads((Path.home() / ".pi/agent/models.json").read_text())["providers"][provider]["baseUrl"]
@@ -191,9 +249,8 @@ def run(args, stack):
         runtime = Path(runtime_name)
         scratch = Path(scratch_name)
         (runtime / "extensions").mkdir()
-        policy = native_policy(profile, checkout, vault, para, state_root, scratch, references, task_roots)
-        for path in policy["writable"]:
-            Path(path).mkdir(parents=True, exist_ok=True)
+        policy = native_policy(profile, checkout, vault, para, state_root, scratch, references, task_roots, dirs)
+        prepare_writable(policy["writable"], [dirs["changelog"]] if dirs["changelog"] else [])
         (runtime / "extensions/seatbelt.json").write_text(json.dumps(policy))
         (runtime / "models.json").write_text(json.dumps(models))
         (runtime / "settings.json").write_text(json.dumps({"defaultProvider": provider, "defaultModel": model_id, "defaultProjectTrust": "never"}))

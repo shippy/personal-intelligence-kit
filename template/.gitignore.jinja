@@ -1,0 +1,40 @@
+# Secrets (no dotenv .envrc: resolve op:// refs per call with `op run --env-file=.env`)
+.env
+.envrc
+
+# Host-only Claude settings (web policy, local MCP servers, approvals)
+.claude/settings.local.json
+
+# User data (actual content stays local)
+{%- if output_root in ['.', ''] %}
+reports/
+alerts/
+reflections/
+briefings/
+drafts-for-review/
+/index.md
+/log.md
+{%- else %}
+{{ output_root.strip("/") }}/
+{%- endif %}
+working/
+logs/
+data/
+inbox/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+
+# Editors
+.DS_Store
+.vscode/
+.idea/
+
+# Obsidian workspace state (keep config, skip per-user state)
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json

@@ -1,0 +1,43 @@
+{%- from 'template/config/_paths.jinja' import logic, launchd_logs, reflections_dir, sync_needs_secrets with context -%}
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.claude.reflection-reminder</string>
+
+    <!-- No secrets, no Python: notifies only if no weekly reflection exists from the last 6 days. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{{ logic | e }}/scripts/reflection-reminder.sh</string>
+        <string>{{ reflections_dir | e }}</string>
+    </array>
+
+    <!-- Sunday 10:00. launchd runs a slot missed during sleep on wake. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>{{ logic | e }}</string>
+
+    <key>StandardOutPath</key>
+    <string>{{ launchd_logs | e }}/reflection-reminder-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{ launchd_logs | e }}/reflection-reminder-stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

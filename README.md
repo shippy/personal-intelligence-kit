@@ -91,7 +91,25 @@ Copier will prompt you to choose which sources to enable, where your data lives,
 | **Tasks** | Microsoft To-Do (Graph API), Todoist, Things 3 | Device code flow / API token / local DB |
 | **Notes** | Obsidian, Logseq, or plain markdown | File path (read-only) |
 | **Git** | Commit stats across repos with co-author detection | Local repos |
-| **Contacts** | Clay.earth via MCP | API key |
+| **Contacts** | Any contacts MCP (e.g. Clay/Mesh), registered in local scope | Per server (OAuth/API key) |
+
+## Split layout (logic vs content)
+
+By default everything lives in one directory. Since v0.8.0 you can keep the **logic** (this
+generated git repo: `CLAUDE.md`, `.claude/`, `config/`) apart from the **content** (`output/`,
+`data/`, `logs/`, `working/`, e.g. an Obsidian vault without git) and from host-only **state**:
+
+```bash
+copier copy gh:shippy/personal-intelligence-kit ~/my-vault-logic \
+  --data content_root=~/Documents/My-Vault --data state_root=~/.local/state/my-vault
+```
+
+Sessions start in the logic dir; the content dir is attached through `additionalDirectories`.
+Sandboxes can then get a clone of the logic without personal data. Further options are
+`output_root="."` (no `output/` level), `host_web=deny` (no agent web tools on the host, so
+research runs in a sandbox and drops results in `inbox/`), and `schedule_reflection` /
+`reflection_reminder`. See [`template/docs/split-layout.md`](template/docs/split-layout.md), which also
+covers migrating an existing single-dir vault. `content_root="."` keeps the old behaviour.
 
 ## Design Principles
 
@@ -109,7 +127,7 @@ Pull template improvements into an existing vault:
 
 ```bash
 cd ~/my-vault
-copier update --vcs-ref=v0.7.0
+copier update --vcs-ref=v0.8.0
 ```
 
 This re-renders templates and merges changes. Your `output/`, `data/`, `logs/`, and `.env` are preserved across updates.
@@ -120,6 +138,7 @@ This re-renders templates and merges changes. Your `output/`, `data/`, `logs/`, 
 uv --no-config run --locked --project template/.claude/skills/weekly-reflection --with pytest --with rapidfuzz pytest -q template/.claude/skills
 python3 -m unittest discover -s template/scripts/pi_task -p 'test_*.py' -t template/scripts
 node --test template/scripts/pi_task/project-handoff.test.mjs
+uv run --no-project --with copier --with pytest pytest -q tests   # renders the template
 ```
 
 ## License

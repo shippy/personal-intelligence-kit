@@ -8,3 +8,9 @@ __pycache__/
 
 # Testing artifacts
 /tmp/
+
+# Local scaffolding hidden by the old template/.gitignore (never shipped)
+/template/data/
+/template/logs/
+/template/output/
+/template/working/
