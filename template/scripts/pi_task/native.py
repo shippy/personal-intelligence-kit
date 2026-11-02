@@ -51,7 +51,16 @@ def content_dirs(config, vault):
         path = Path(raw).expanduser()
         return Path(os.path.normpath(path if path.is_absolute() else base / path))
     root = resolve(vault, config.get("paths", {}).get("content_root") or ".")
-    return {"root": root, **{name: resolve(root, config.get(name, {}).get("root", name)) for name in ("output", "working", "data", "logs")}}
+    dirs = {"root": root, **{name: resolve(root, config.get(name, {}).get("root", name)) for name in ("output", "working", "data", "logs")}}
+    output = dirs["output"]
+    if output in (root, vault) or any(output in dirs[name].parents or output == dirs[name] for name in ("working", "data", "logs")) or output in vault.parents:
+        # Flattened output (output.root = "."): never grant the whole content/logic root,
+        # only the configured deliverable dirs and the OKF changelog.
+        named = [resolve(root, value) for key, value in config.get("output", {}).items() if key != "root" and isinstance(value, str)]
+        dirs["deliverables"] = [path for path in dict.fromkeys(named) if path not in (root, vault)] + [output / "log.md"]
+    else:
+        dirs["deliverables"] = [output]
+    return dirs
 
 
 def native_policy(profile, checkout, vault, para, state_root, temporary, references=(), task_roots=(), dirs=None):
@@ -60,11 +69,11 @@ def native_policy(profile, checkout, vault, para, state_root, temporary, referen
     notes_roots = [para] if para is not None else []
     readable = [*project_roots, *notes_roots, dirs["output"], dirs["working"], dirs["data"], ASSETS, *references]
     readable += [Path(path) for path in ("/bin", "/sbin", "/usr", "/System", "/Library", "/opt/homebrew", "/etc", "/private/etc", "/dev/null", "/dev/urandom")]
-    writable = [dirs[name] for name in ("output", "working", "logs")] if profile == "pkm" else project_roots
+    writable = [*dirs["deliverables"], dirs["working"], dirs["logs"]] if profile == "pkm" else project_roots
     for path in writable:
         if path.is_symlink() or overlap(path.resolve(), para) or overlap(path.resolve(), state_root):
             raise ValueError(f"Unsafe writable root: {path}")
-    forbidden = [*notes_roots, state_root, ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
+    forbidden = [*notes_roots, state_root, dirs["data"], ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
     forbidden += [root / name for root in project_roots for name in (".git", ".pi", ".agents", ".claude")]
     forbidden += [path for path in references if not (profile == "project" and any(path == root or path in root.parents for root in project_roots))]
     for root in project_roots:
