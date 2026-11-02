@@ -35,7 +35,7 @@ class NativePolicyTests(unittest.TestCase):
 
     def test_content_dirs_default_to_single_dir_layout(self):
         dirs = native.content_dirs({}, self.vault)
-        self.assertEqual(dirs, {"root": self.vault, **{name: self.vault / name for name in ("output", "working", "data", "logs")}, "deliverables": [self.vault / "output"]})
+        self.assertEqual(dirs, {"root": self.vault, **{name: self.vault / name for name in ("output", "working", "data", "logs")}, "deliverables": [self.vault / "output"], "changelog": None})
 
     def test_split_layout_policy_uses_content_root(self):
         content = self.root / "content"
@@ -66,6 +66,17 @@ class NativePolicyTests(unittest.TestCase):
                 self.assertNotIn(str(root), policy["writable"])
                 self.assertNotIn(str(self.vault), policy["writable"])
                 self.assertIn(str(root / "data"), policy["denyWrite"])
+
+    def test_prepare_writable_keeps_changelog_a_file(self):
+        content = self.root / "content"
+        dirs = native.content_dirs({"paths": {"content_root": str(content)}, "output": {"root": ".", "reports": "reports"}}, self.vault)
+        policy = native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        native.prepare_writable(policy["writable"], [dirs["changelog"]])
+        self.assertTrue((content / "reports").is_dir())
+        self.assertFalse((content / "log.md").exists())
+        (content / "log.md").write_text("## 2026-11-02\n")
+        native.prepare_writable(policy["writable"], [dirs["changelog"]])  # existing file: no FileExistsError
+        self.assertTrue((content / "log.md").is_file())
 
     def test_relative_content_root_resolves_against_vault(self):
         dirs = native.content_dirs({"paths": {"content_root": "../content"}}, self.vault)

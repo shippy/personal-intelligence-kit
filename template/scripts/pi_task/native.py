@@ -57,10 +57,20 @@ def content_dirs(config, vault):
         # Flattened output (output.root = "."): never grant the whole content/logic root,
         # only the configured deliverable dirs and the OKF changelog.
         named = [resolve(root, value) for key, value in config.get("output", {}).items() if key != "root" and isinstance(value, str)]
-        dirs["deliverables"] = [path for path in dict.fromkeys(named) if path not in (root, vault)] + [output / "log.md"]
+        dirs["deliverables"] = [path for path in dict.fromkeys(named) if path not in (root, vault)]
+        dirs["changelog"] = output / "log.md"
     else:
         dirs["deliverables"] = [output]
+        dirs["changelog"] = None
     return dirs
+
+
+def prepare_writable(writable, files=()):
+    """Create writable roots before the sandbox starts. File entries (the OKF changelog) only get their parent."""
+    files = {str(path) for path in files}
+    for path in writable:
+        target = Path(path)
+        (target.parent if str(path) in files else target).mkdir(parents=True, exist_ok=True)
 
 
 def native_policy(profile, checkout, vault, para, state_root, temporary, references=(), task_roots=(), dirs=None):
@@ -69,7 +79,8 @@ def native_policy(profile, checkout, vault, para, state_root, temporary, referen
     notes_roots = [para] if para is not None else []
     readable = [*project_roots, *notes_roots, dirs["output"], dirs["working"], dirs["data"], ASSETS, *references]
     readable += [Path(path) for path in ("/bin", "/sbin", "/usr", "/System", "/Library", "/opt/homebrew", "/etc", "/private/etc", "/dev/null", "/dev/urandom")]
-    writable = [*dirs["deliverables"], dirs["working"], dirs["logs"]] if profile == "pkm" else project_roots
+    changelog = [dirs["changelog"]] if dirs.get("changelog") else []
+    writable = [*dirs["deliverables"], *changelog, dirs["working"], dirs["logs"]] if profile == "pkm" else project_roots
     for path in writable:
         if path.is_symlink() or overlap(path.resolve(), para) or overlap(path.resolve(), state_root):
             raise ValueError(f"Unsafe writable root: {path}")
@@ -214,9 +225,9 @@ def run(args, stack):
         runtime = Path(runtime_name)
         scratch = Path(scratch_name)
         (runtime / "extensions").mkdir()
-        policy = native_policy(profile, checkout, vault, para, state_root, scratch, references, task_roots, content_dirs(config, vault))
-        for path in policy["writable"]:
-            Path(path).mkdir(parents=True, exist_ok=True)
+        dirs = content_dirs(config, vault)
+        policy = native_policy(profile, checkout, vault, para, state_root, scratch, references, task_roots, dirs)
+        prepare_writable(policy["writable"], [dirs["changelog"]] if dirs["changelog"] else [])
         (runtime / "extensions/seatbelt.json").write_text(json.dumps(policy))
         (runtime / "models.json").write_text(json.dumps(models))
         (runtime / "settings.json").write_text(json.dumps({"defaultProvider": provider, "defaultModel": model_id, "defaultProjectTrust": "never"}))
