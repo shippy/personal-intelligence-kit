@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import (  # noqa: E402
     load_config,
     source_enabled,
-    vault_root,
+    browser_db_path,
     output_dir,
     activity_log,
 )
@@ -100,7 +100,7 @@ def main():
         print("Browser source not enabled.")
         return 1
 
-    db = vault_root() / "data" / "browser-history.db"
+    db = browser_db_path()
     if not db.exists():
         print("No browser history data found. Run browser-ingest first.")
         return 1

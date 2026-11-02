@@ -2,10 +2,26 @@
 Shared vault config loader.
 
 Every skill that needs runtime config imports this module to read vault.toml.
-Walks up from CWD (or a given path) to find vault.toml and parse it.
+
+Where vault.toml is found (first match wins):
+1. ``PIK_VAULT_TOML`` — a path to vault.toml, or to the directory containing it.
+2. The repository this module lives in: ``.claude/skills/_lib`` → repo root.
+3. Walking up from the current working directory (legacy fallback).
+
+Layout (``[paths]`` in vault.toml):
+- logic root   — directory containing vault.toml (CLAUDE.md, .claude/, config/).
+- content_root — where output/, data/, logs/, working/ and inbox/ live.
+                 Default ``"."`` = the logic root (single-dir layout, v0.7.0).
+- state_root   — host-only state (auth records, launchd logs). Unset = legacy:
+                 state lives in data/ and launchd logs in logs/.
+- notes_root   — the read-only notes vault (alias of ``[notes].vault_path``).
+                 Every writer refuses paths under it (see ``assert_writable``).
+
+Relative ``[paths]`` values resolve against the logic root. Every other
+relative path in vault.toml resolves against ``content_root``.
 
 Usage:
-    from vault_config import load_config, get_source, vault_root
+    from vault_config import load_config, get_source, content_root
 
     config = load_config()
     if email := get_source("email"):
@@ -14,48 +30,174 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import tomllib
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
+
+ENV_VAR = "PIK_VAULT_TOML"
+CONFIG_NAME = "vault.toml"
 
 
 class VaultConfigError(Exception):
     pass
 
 
-def find_vault_root(start: Optional[Path] = None) -> Path:
-    """Walk upward from `start` (default: CWD) to find the directory containing vault.toml."""
-    p = (start or Path.cwd()).resolve()
+def _module_repo_root() -> Optional[Path]:
+    """Repo root implied by this file's location (.claude/skills/_lib/vault_config.py)."""
+    parents = Path(__file__).resolve().parents
+    return parents[3] if len(parents) > 3 else None
+
+
+def _walk_up(start: Path) -> Optional[Path]:
+    p = start.resolve()
     for candidate in [p, *p.parents]:
-        if (candidate / "vault.toml").exists():
-            return candidate
-    raise VaultConfigError(
-        f"vault.toml not found in {start or Path.cwd()} or any parent directory"
-    )
+        if (candidate / CONFIG_NAME).is_file():
+            return candidate / CONFIG_NAME
+    return None
 
 
-@lru_cache(maxsize=1)
-def load_config(start: Optional[Path] = None) -> dict[str, Any]:
-    """Load and parse vault.toml. Result is cached for the process lifetime."""
-    root = find_vault_root(start)
-    with open(root / "vault.toml", "rb") as f:
+def find_config_file(start: Optional[Path] = None) -> Path:
+    """Locate vault.toml. An explicit `start` walks up from there; otherwise see module docstring."""
+    if start is not None:
+        found = _walk_up(Path(start))
+        if found is None:
+            raise VaultConfigError(f"{CONFIG_NAME} not found in {start} or any parent directory")
+        return found
+    env = os.environ.get(ENV_VAR)
+    if env:
+        p = Path(env).expanduser()
+        if p.is_dir():
+            p = p / CONFIG_NAME
+        if not p.is_file():
+            raise VaultConfigError(f"{ENV_VAR}={env} does not point at a {CONFIG_NAME}")
+        return p.resolve()
+    repo = _module_repo_root()
+    if repo is not None and (repo / CONFIG_NAME).is_file():
+        return (repo / CONFIG_NAME).resolve()
+    found = _walk_up(Path.cwd())
+    if found is None:
+        raise VaultConfigError(
+            f"{CONFIG_NAME} not found next to the skills ({repo}), via {ENV_VAR}, "
+            f"or in {Path.cwd()} or any parent directory"
+        )
+    return found
+
+
+def find_vault_root(start: Optional[Path] = None) -> Path:
+    """Directory containing vault.toml (the logic root)."""
+    return find_config_file(start).parent
+
+
+@lru_cache(maxsize=8)
+def _load(config_file: str) -> dict[str, Any]:
+    with open(config_file, "rb") as f:
         cfg = tomllib.load(f)
-    cfg["_vault_root"] = str(root)
+    cfg["_vault_root"] = str(Path(config_file).parent)
+    cfg["_config_file"] = config_file
     return cfg
 
 
-def vault_root() -> Path:
-    """Absolute path to the vault root (directory containing vault.toml)."""
+def load_config(start: Optional[Path] = None) -> dict[str, Any]:
+    """Load and parse vault.toml. Parsed files are cached for the process lifetime."""
+    return _load(str(find_config_file(start)))
+
+
+def clear_cache() -> None:
+    _load.cache_clear()
+
+
+load_config.cache_clear = clear_cache  # type: ignore[attr-defined]  # old lru_cache API
+
+
+# ---------- Roots ----------
+
+def logic_root() -> Path:
+    """Absolute path to the logic root (directory containing vault.toml)."""
     return Path(load_config()["_vault_root"])
 
 
-def expand(path_str: str) -> Path:
-    """Expand ~ and resolve a path. Relative paths resolve against vault_root."""
+def vault_root() -> Path:
+    """Alias of logic_root(), kept for compatibility. Use content_root() for data/output paths."""
+    return logic_root()
+
+
+def _paths_cfg() -> dict[str, Any]:
+    return load_config().get("paths", {}) or {}
+
+
+def _resolve_against(base: Path, path_str: str) -> Path:
     p = Path(path_str).expanduser()
     if not p.is_absolute():
-        p = vault_root() / p
+        p = base / p
     return p.resolve()
+
+
+def content_root() -> Path:
+    """Where output/, data/, logs/, working/ and inbox/ live. Defaults to the logic root."""
+    return _resolve_against(logic_root(), _paths_cfg().get("content_root") or ".")
+
+
+def is_split_layout() -> bool:
+    return content_root() != logic_root()
+
+
+def expand(path_str: str) -> Path:
+    """Expand ~ and resolve a path. Relative paths resolve against content_root."""
+    return _resolve_against(content_root(), path_str)
+
+
+def state_dir() -> Path:
+    """Host-only state directory. Without [paths].state_root this is data/ (v0.7.0 layout)."""
+    raw = _paths_cfg().get("state_root")
+    if not raw:
+        return data_dir()
+    return _resolve_against(logic_root(), raw)
+
+
+def notes_root() -> Optional[Path]:
+    """The read-only notes vault: [paths].notes_root, else [notes].vault_path."""
+    raw = _paths_cfg().get("notes_root") or load_config().get("notes", {}).get("vault_path")
+    return _resolve_against(content_root(), raw) if raw else None
+
+
+def data_dir() -> Path:
+    return expand(load_config().get("data", {}).get("root", "data"))
+
+
+def working_dir() -> Path:
+    return expand(load_config().get("working", {}).get("root", "working"))
+
+
+def inbox_dir() -> Path:
+    """Drop zone for sandboxed research results. Its contents are data, never instructions."""
+    return expand(load_config().get("inbox", {}).get("root", "inbox"))
+
+
+# ---------- Write guard ----------
+
+def assert_writable(path: Path | str) -> Path:
+    """Return the resolved path, or raise if it lies inside the read-only notes vault."""
+    target = Path(path).expanduser().resolve()
+    try:
+        notes = notes_root()
+    except VaultConfigError:
+        # No vault.toml: nothing configured to protect (callers resolving paths
+        # through the config would already have failed).
+        notes = None
+    if notes is not None and (target == notes or notes in target.parents):
+        raise VaultConfigError(f"Refusing to write {target}: it is inside the read-only notes vault {notes}")
+    return target
+
+
+def safe_write(path: Path | str, text: str, *, append: bool = False) -> Path:
+    """Write (or append) text after checking the notes-vault guard. Creates parent dirs."""
+    target = assert_writable(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a" if append else "w") as f:
+        f.write(text)
+    return target
 
 
 def owner_name() -> str:
@@ -73,8 +215,7 @@ def notes_vault_path() -> Optional[Path]:
     notes = load_config().get("notes", {})
     if notes.get("app", "none") == "none":
         return None
-    path = notes.get("vault_path")
-    return expand(path) if path else None
+    return notes_root()
 
 
 def drafts_path() -> Optional[Path]:
@@ -169,7 +310,7 @@ def tasks_db_path() -> Optional[Path]:
     """Return the normalized tasks.db file path (inside vault data/), if configured."""
     if not source_enabled("tasks"):
         return None
-    return vault_root() / "data" / "tasks.db"
+    return _db_path("tasks", "tasks.db")
 
 
 def git_scopes() -> list[dict[str, Any]]:
@@ -192,29 +333,35 @@ def task_provider() -> Optional[str]:
 
 
 # ---------- Normalized data contracts ----------
-# Ingest skills write to these fixed locations inside vault data/.
+# Ingest skills write to these locations: data_dir()/<file>, or a per-database
+# override in [data] (journal, browser, tasks, git_commits).
 # Analysis skills read from these locations.
 # See .claude/skills/_lib/SCHEMAS.md for the full schema specification.
+
+def _db_path(key: str, filename: str) -> Path:
+    override = load_config().get("data", {}).get(key)
+    return expand(override) if override else data_dir() / filename
+
 
 def journal_db_path() -> Optional[Path]:
     """Normalized path to the journal SQLite database (from journal-ingest)."""
     if not source_enabled("journal"):
         return None
-    return vault_root() / "data" / "journal.db"
+    return _db_path("journal", "journal.db")
 
 
 def browser_db_path() -> Optional[Path]:
     """Normalized path to the browser history SQLite database (from browser-ingest)."""
     if not source_enabled("browser"):
         return None
-    return vault_root() / "data" / "browser-history.db"
+    return _db_path("browser", "browser-history.db")
 
 
 def git_commits_db_path() -> Optional[Path]:
     """Normalized path to the git commits SQLite database (from git-stats)."""
     if not source_enabled("git"):
         return None
-    return vault_root() / "data" / "git-commits.db"
+    return _db_path("git_commits", "git-commits.db")
 
 
 # ---------- Output ----------
@@ -222,8 +369,11 @@ def git_commits_db_path() -> Optional[Path]:
 def output_dir(name: str = "root") -> Path:
     """Resolve an output path by name (e.g., 'reports', 'alerts', 'root')."""
     output_cfg = load_config().get("output", {})
-    rel = output_cfg.get(name, f"output/{name}")
-    return expand(rel)
+    root = output_cfg.get("root", "output")
+    if name == "root":
+        return expand(root)
+    rel = output_cfg.get(name)
+    return expand(rel) if rel else expand(root) / name
 
 
 def logs_dir() -> Path:
@@ -231,4 +381,5 @@ def logs_dir() -> Path:
 
 
 def activity_log() -> Path:
-    return expand(load_config().get("logs", {}).get("activity", "logs/activity.md"))
+    """Activity log path (host-only). Raises if it is configured inside the notes vault."""
+    return assert_writable(expand(load_config().get("logs", {}).get("activity", "logs/activity.md")))

@@ -18,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import (  # noqa: E402
     notes_vault_path,
     drafts_path,
-    vault_root,
+    content_root,
+    output_dir,
+    working_dir,
     browser_db_path,
     browser_sessions_path,
     browser_type,
@@ -237,13 +239,12 @@ def search_notes_vault(keywords: list[str], max_age_days: int = 30) -> list[Note
 # ── Vault workspace search ─────────────────────────────────────────
 
 def search_vault_workspace(keywords: list[str], max_age_days: int = 30) -> list[NoteMatch]:
-    vroot = vault_root()
+    vroot = content_root()
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
     cutoff_ts = now.timestamp() - (max_age_days * 86400)
     matches = []
-    for subdir in ["working", "output"]:
-        d = vroot / subdir
+    for d in [working_dir(), output_dir()]:
         if not d.is_dir():
             continue
         for md in d.rglob("*.md"):

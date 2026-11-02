@@ -31,7 +31,7 @@ from vault_config import (  # noqa: E402
     source_enabled,
     journal_path,
     journal_type,
-    vault_root,
+    journal_db_path,
     activity_log,
 )
 
@@ -343,7 +343,7 @@ def main():
     print(f"Parsed {len(all_entries)} entries")
 
     # Write to DB
-    db_path = vault_root() / "data" / "journal.db"
+    db_path = journal_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if args.rebuild and db_path.exists():
         db_path.unlink()

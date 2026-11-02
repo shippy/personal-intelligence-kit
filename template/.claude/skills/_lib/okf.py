@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault_config import output_dir  # noqa: E402
+from vault_config import assert_writable, output_dir  # noqa: E402
 
 RESERVED_SLUGS = {"index", "log"}
 
@@ -60,7 +60,7 @@ def write_concept(
     if slug in RESERVED_SLUGS:
         raise ValueError(f"slug {slug!r} is reserved (index/log)")
     ts = timestamp or datetime.now().strftime("%Y-%m-%d")
-    target_dir = Path(out_dir) if out_dir is not None else output_dir(subdir)
+    target_dir = assert_writable(Path(out_dir) if out_dir is not None else output_dir(subdir))
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"{slug}.md"
     existed = path.exists()
@@ -79,6 +79,7 @@ def write_concept(
 
 
 def _append_log(root: Path, date: str, kind: str, title: str) -> None:
+    root = assert_writable(root)
     root.mkdir(parents=True, exist_ok=True)
     log_path = root / "log.md"
     entry = f"* **{kind}**: {title}"

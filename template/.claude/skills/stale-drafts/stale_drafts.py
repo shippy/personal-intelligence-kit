@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
-from vault_config import load_config, vault_root, output_dir, activity_log  # noqa: E402
+from vault_config import load_config, output_dir, activity_log  # noqa: E402
 import okf  # noqa: E402
 
 from draft_analyzer import DraftAnalyzer
