@@ -30,6 +30,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import (  # noqa: E402
+    assert_writable,
     load_config,
     source_enabled,
     git_scopes,
@@ -248,7 +249,7 @@ def main() -> int:
     if not args.all and not since:
         since = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
 
-    db_path = git_commits_db_path()
+    db_path = assert_writable(git_commits_db_path())
     conn = init_db(db_path)
 
     total_commits = 0

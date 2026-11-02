@@ -92,8 +92,9 @@ output_root:
   validator: >-
     {% if output_root.startswith('/') or output_root.startswith('~') or '..' in output_root %}
     Must be relative to the content root (e.g. "output" or ".").
-    {% elif output_root != '.' and (output_root.startswith('./') or output_root.endswith('/') or '//' in output_root or '/./' in output_root) %}
-    Use "." or a plain relative path such as "output" (no "./" prefix or trailing "/").
+    {% elif output_root != '.' and (not (output_root | regex_search('^[A-Za-z0-9_-][A-Za-z0-9._ -]*(/[A-Za-z0-9_-][A-Za-z0-9._ -]*)*$')) or output_root.endswith('.') or '/.' in output_root) %}
+    Use "." or a plain relative path such as "output" (letters, digits, "-", "_", "." and spaces;
+    no "./" or "/." segments, no trailing "/" or ".", no glob characters).
     {% endif %}
 
 # ============================================================
@@ -254,9 +255,10 @@ _message_after_copy: |
   Split layout: content lives outside this repo, in {{ content_root }}.
   Create the content dirs once (skills also create them on demand):
 
-      mkdir -p {{ content_root }}/data {{ content_root }}/logs {{ content_root }}/working {{ content_root }}/inbox/research{% if output_root != '.' %} {{ content_root }}/{{ output_root }}{% endif %}
+  {%- set c = content_root | expanduser %}
+      mkdir -p {% for d in ['data', 'logs', 'working', 'inbox/research'] + ([output_root] if output_root != '.' else []) %}{{ (c ~ '/' ~ d) | quote }} {% endfor %}
   {%- if state_root %}
-      mkdir -p {{ state_root }}/launchd
+      mkdir -p {{ ((state_root | expanduser) ~ '/launchd') | quote }}
   {%- endif %}
 
   See docs/split-layout.md.

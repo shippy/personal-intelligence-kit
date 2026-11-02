@@ -36,7 +36,8 @@ class NativePolicyTests(unittest.TestCase):
     def test_content_dirs_default_to_single_dir_layout(self):
         dirs = native.content_dirs({}, self.vault)
         self.assertEqual(dirs, {"root": self.vault, **{name: self.vault / name for name in ("output", "working", "data", "logs")}, "deliverables": [self.vault / "output"], "changelog": None,
-                                "state": None, "activity": self.vault / "logs" / "activity.md", "notes": None})
+                                "state": None, "activity": self.vault / "logs" / "activity.md", "notes": None,
+                                "databases": []})
 
     def test_host_state_and_activity_log_are_protected(self):
         content = self.root / "content"
@@ -48,6 +49,19 @@ class NativePolicyTests(unittest.TestCase):
         self.assertIn(str(self.vault / "host-state"), policy["denyRead"])
         self.assertIn(str(self.vault / "host-state"), policy["denyWrite"])
         self.assertIn(str(content / "logs" / "activity.md"), policy["denyWrite"])
+
+    def test_symlinked_writable_root_is_refused(self):
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        (self.vault / "output").symlink_to(elsewhere)
+        with self.assertRaises(ValueError):
+            native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=native.content_dirs({}, self.vault))
+
+    def test_database_overrides_are_write_denied(self):
+        dirs = native.content_dirs({"data": {"browser": "working/browser-history.db"}}, self.vault)
+        policy = native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        self.assertIn(str(self.vault / "working"), policy["writable"])
+        self.assertIn(str(self.vault / "working" / "browser-history.db"), policy["denyWrite"])
 
     def test_notes_root_matches_skill_resolution(self):
         content = self.root / "content"

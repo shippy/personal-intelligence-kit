@@ -294,8 +294,9 @@ def test_write_concept_refuses_symlinked_file_and_changelog(tmp_path, monkeypatc
 
 def test_database_and_state_paths_inside_notes_are_refused(tmp_path, monkeypatch):
     notes = _guarded(tmp_path, monkeypatch, f'[sources.browser]\nenabled = true\n[data]\nbrowser = "{tmp_path}/Notes/b.db"\n[paths]\nstate_root = "{tmp_path}/Notes/state"\n')
+    assert vc.browser_db_path() == (notes / "b.db").resolve()  # readers may still open it
     with pytest.raises(vc.VaultConfigError):
-        vc.browser_db_path()
+        vc.assert_writable(vc.browser_db_path())  # writers guard it
     with pytest.raises(vc.VaultConfigError):
         vc.state_dir()
     assert notes.exists()

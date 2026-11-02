@@ -28,6 +28,7 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import (  # noqa: E402
+    assert_writable,
     load_config,
     source_enabled,
     browser_history_path,
@@ -115,7 +116,7 @@ def _ingest(args, tmp: Path) -> int:
         )
 
     # Prepare output DB
-    out_path = browser_db_path()
+    out_path = assert_writable(browser_db_path())
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.exists():
         out_path.unlink()

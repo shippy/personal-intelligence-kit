@@ -11,9 +11,9 @@ owner = "{{ owner_name }}"
 # state_root:   host-only state (auth records); unset = data/ (single-dir default).
 # notes_root:   optional; defaults to [notes].vault_path. Skills never write there.
 [paths]
-content_root = "{{ content_root }}"
+content_root = {{ content_root | tojson }}
 {%- if state_root %}
-state_root = "{{ state_root }}"
+state_root = {{ state_root | tojson }}
 {%- else %}
 # state_root = "~/.local/state/{{ vault_name | lower | replace(' ', '-') }}"
 {%- endif %}

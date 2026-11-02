@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import (  # noqa: E402
+    assert_writable,
     load_config,
     source_enabled,
     task_provider,
@@ -56,7 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed_at);
 
 
 def open_db() -> sqlite3.Connection:
-    db_path = tasks_db_path()
+    db_path = assert_writable(tasks_db_path())
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA)
@@ -153,7 +154,7 @@ _MS_AUTH_RECORD = "ms_auth_record.json"
 
 def _ms_auth_record_path() -> Path:
     """Path to the persisted Azure authentication record (host-only state)."""
-    return state_dir() / _MS_AUTH_RECORD
+    return assert_writable(state_dir() / _MS_AUTH_RECORD)  # the file may be a symlink
 
 
 def _load_ms_auth_record_text() -> str | None:

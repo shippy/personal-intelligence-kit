@@ -47,12 +47,19 @@ def content_dirs(config, vault):
     [paths].content_root resolves against the vault (logic) dir; output/working/data/logs
     roots resolve against the content root. Defaults reproduce the single-dir layout.
     """
-    def resolve(base, raw):
+    def resolve(base, raw, leaf=True):
         path = Path(raw).expanduser()
-        return (path if path.is_absolute() else base / path).resolve()  # same as vault_config: symlinks first
+        path = path if path.is_absolute() else base / path
+        if leaf or path.name in ("", ".", ".."):
+            return path.resolve()  # same as vault_config: symlinks first
+        # Writable roots: resolve the parent but keep the last component, so native_policy
+        # still sees (and refuses) a symlinked output/working/logs dir.
+        return path.parent.resolve() / path.name
     paths = config.get("paths", {})
     root = resolve(vault, paths.get("content_root") or ".")
-    dirs = {"root": root, **{name: resolve(root, config.get(name, {}).get("root", name)) for name in ("output", "working", "data", "logs")}}
+    dirs = {"root": root, **{name: resolve(root, config.get(name, {}).get("root", name), leaf=name == "data") for name in ("output", "working", "data", "logs")}}
+    data = config.get("data", {})
+    dirs["databases"] = [resolve(root, value) for key, value in data.items() if key != "root" and isinstance(value, str)]
     # Host-only files the sandbox must not touch: configured state (auth records) and the activity log.
     dirs["state"] = resolve(vault, paths["state_root"]) if paths.get("state_root") else None
     dirs["activity"] = resolve(root, config.get("logs", {}).get("activity", "logs/activity.md"))
@@ -67,7 +74,7 @@ def content_dirs(config, vault):
     if output in (root, vault) or any(output in dirs[name].parents or output == dirs[name] for name in ("working", "data", "logs")) or output in vault.parents:
         # Flattened output (output.root = "."): never grant the whole content/logic root,
         # only the configured deliverable dirs and the OKF changelog.
-        named = [resolve(root, value) for key, value in config.get("output", {}).items() if key != "root" and isinstance(value, str)]
+        named = [resolve(root, value, leaf=False) for key, value in config.get("output", {}).items() if key != "root" and isinstance(value, str)]
         dirs["deliverables"] = [path for path in dict.fromkeys(named) if path not in (root, vault)]
         dirs["changelog"] = output / "log.md"
     else:
@@ -96,7 +103,7 @@ def native_policy(profile, checkout, vault, para, state_root, temporary, referen
     for path in writable:
         if path.is_symlink() or any(overlap(path.resolve(), root) for root in (para, state_root, *host_state)):
             raise ValueError(f"Unsafe writable root: {path}")
-    forbidden = [*notes_roots, state_root, *host_state, dirs["data"], ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
+    forbidden = [*notes_roots, state_root, *host_state, dirs["data"], *dirs.get("databases", []), ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
     forbidden += [root / name for root in project_roots for name in (".git", ".pi", ".agents", ".claude")]
     forbidden += [path for path in references if not (profile == "project" and any(path == root or path in root.parents for root in project_roots))]
     for root in project_roots:
@@ -158,6 +165,8 @@ def run(args, stack):
         if dirs["notes"] is None:
             raise ValueError("notes.vault_path (or paths.notes_root) is required when a notes source is enabled")
         para = dirs["notes"].resolve(strict=True)
+    elif config.get("paths", {}).get("notes_root"):
+        para = dirs["notes"]  # explicit notes root: protect it even without a notes app
     references = reference_repositories(config, vault, para)
     if args.new and args.task or args.repo and not args.new or args.add_repo and not args.task:
         raise ValueError("Use --repo with --new, or --add-repo with --task; --new and --task are exclusive")

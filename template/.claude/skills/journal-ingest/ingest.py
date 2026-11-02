@@ -27,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from vault_config import (  # noqa: E402
+    assert_writable,
     load_config,
     source_enabled,
     journal_path,
@@ -343,7 +344,7 @@ def main():
     print(f"Parsed {len(all_entries)} entries")
 
     # Write to DB
-    db_path = journal_db_path()
+    db_path = assert_writable(journal_db_path())
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if args.rebuild and db_path.exists():
         db_path.unlink()

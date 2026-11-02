@@ -346,9 +346,7 @@ def task_provider() -> Optional[str]:
 
 def _db_path(key: str, filename: str) -> Path:
     override = load_config().get("data", {}).get(key)
-    path = expand(override) if override else data_dir() / filename
-    assert_writable(path)  # ingest skills replace these files; never inside the notes vault
-    return path
+    return expand(override) if override else data_dir() / filename
 
 
 def journal_db_path() -> Optional[Path]:

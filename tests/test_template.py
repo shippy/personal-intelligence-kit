@@ -208,6 +208,8 @@ def test_paths_with_spaces_and_xml_characters(tmp_path):
                    reflection_reminder=True)
     settings = json.loads((logic / ".claude" / "settings.json").read_text())
     assert settings["permissions"]["additionalDirectories"] == [str(content)]
+    paths = tomllib.loads((logic / "vault.toml").read_text())["paths"]
+    assert paths == {"content_root": str(content), "state_root": str(tmp_path / "st & ate")}
     reminder = plist(logic / "config" / "com.claude.reflection-reminder.plist")
     assert reminder["ProgramArguments"][2] == f"{content}/output/reflections"
     assert plist(logic / "config" / "com.claude.daily-sync.plist")["StandardOutPath"].startswith(str(tmp_path / "st & ate"))
@@ -218,6 +220,6 @@ def test_paths_with_spaces_and_xml_characters(tmp_path):
 
 
 def test_output_root_rejects_equivalent_spellings(tmp_path):
-    for bad in ("./output", "./", "output/"):
+    for bad in ("./output", "./", "output/", "out/.", "out[1]", "a/./b"):
         with pytest.raises(subprocess.CalledProcessError):
             render(tmp_path / bad.replace("/", "_").replace(".", "d"), output_root=bad)
