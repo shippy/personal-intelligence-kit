@@ -151,9 +151,8 @@ def expand(path_str: str) -> Path:
 def state_dir() -> Path:
     """Host-only state directory. Without [paths].state_root this is data/ (v0.7.0 layout)."""
     raw = _paths_cfg().get("state_root")
-    if not raw:
-        return data_dir()
-    return _resolve_against(logic_root(), raw)
+    path = data_dir() if not raw else _resolve_against(logic_root(), raw)
+    return assert_writable(path)
 
 
 def notes_root() -> Optional[Path]:
@@ -347,7 +346,9 @@ def task_provider() -> Optional[str]:
 
 def _db_path(key: str, filename: str) -> Path:
     override = load_config().get("data", {}).get(key)
-    return expand(override) if override else data_dir() / filename
+    path = expand(override) if override else data_dir() / filename
+    assert_writable(path)  # ingest skills replace these files; never inside the notes vault
+    return path
 
 
 def journal_db_path() -> Optional[Path]:

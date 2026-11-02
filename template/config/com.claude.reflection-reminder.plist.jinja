@@ -10,8 +10,8 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>{{ logic }}/scripts/reflection-reminder.sh</string>
-        <string>{{ reflections_dir }}</string>
+        <string>{{ logic | e }}/scripts/reflection-reminder.sh</string>
+        <string>{{ reflections_dir | e }}</string>
     </array>
 
     <!-- Sunday 10:00. launchd runs a slot missed during sleep on wake. -->
@@ -26,13 +26,13 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>{{ logic }}</string>
+    <string>{{ logic | e }}</string>
 
     <key>StandardOutPath</key>
-    <string>{{ launchd_logs }}/reflection-reminder-stdout.log</string>
+    <string>{{ launchd_logs | e }}/reflection-reminder-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>{{ launchd_logs }}/reflection-reminder-stderr.log</string>
+    <string>{{ launchd_logs | e }}/reflection-reminder-stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

@@ -1,4 +1,4 @@
-{#- Permission rule paths: "//abs" = filesystem root, "~/" = home, "./" = session cwd. -#}
+{#- Permission rule paths: "//abs" = filesystem root, "~/" = home, "./" = session cwd (avoided). -#}
 {%- macro rule_path(p) -%}{{ '/' ~ p if p.startswith('/') else p }}{%- endmacro -%}
 {
   "permissions": {
@@ -16,19 +16,21 @@
     ],
     "deny": [
 {%- if notes_app != 'none' %}
-      "Edit({{ rule_path(notes_vault_path) }}/**)",
-      "Write({{ rule_path(notes_vault_path) }}/**)",
-      "NotebookEdit({{ rule_path(notes_vault_path) }}/**)",
+      {{ ("Edit(" ~ rule_path(notes_vault_path) ~ "/**)") | tojson }},
+      {{ ("Write(" ~ rule_path(notes_vault_path) ~ "/**)") | tojson }},
+      {{ ("NotebookEdit(" ~ rule_path(notes_vault_path) ~ "/**)") | tojson }},
 {%- endif %}
-      "Edit(./.claude/settings.json)",
-      "Write(./.claude/settings.json)",
-      "Edit(./.claude/settings.local.json)",
-      "Write(./.claude/settings.local.json)",
-      "Edit(./.claude/hooks/**)",
-      "Write(./.claude/hooks/**)"
+{#- Anchored to the logic dir, not "./", so the rules hold whatever the session cwd is. #}
+{%- set claude_dir = rule_path(vault_path.rstrip('/')) ~ '/.claude' %}
+      {{ ("Edit(" ~ claude_dir ~ "/settings.json)") | tojson }},
+      {{ ("Write(" ~ claude_dir ~ "/settings.json)") | tojson }},
+      {{ ("Edit(" ~ claude_dir ~ "/settings.local.json)") | tojson }},
+      {{ ("Write(" ~ claude_dir ~ "/settings.local.json)") | tojson }},
+      {{ ("Edit(" ~ claude_dir ~ "/hooks/**)") | tojson }},
+      {{ ("Write(" ~ claude_dir ~ "/hooks/**)") | tojson }}
     ]{% if content_root != '.' %},
     "additionalDirectories": [
-      "{{ content_root | expanduser }}"
+      {{ (content_root | expanduser) | tojson }}
     ]{% endif %}
   }
 }

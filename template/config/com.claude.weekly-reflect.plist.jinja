@@ -10,13 +10,13 @@
     <array>
         <string>/opt/homebrew/bin/op</string>
         <string>run</string>
-        <string>--env-file={{ logic }}/.env</string>
+        <string>--env-file={{ logic | e }}/.env</string>
         <string>--</string>
         <string>/opt/homebrew/bin/uv</string>
         <string>run</string>
         <string>--project</string>
-        <string>{{ logic }}/.claude/skills/weekly-reflection</string>
-        <string>{{ logic }}/.claude/skills/weekly-reflection/weekly_reflection.py</string>
+        <string>{{ logic | e }}/.claude/skills/weekly-reflection</string>
+        <string>{{ logic | e }}/.claude/skills/weekly-reflection/weekly_reflection.py</string>
     </array>
 
     <key>StartCalendarInterval</key>
@@ -30,13 +30,13 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>{{ logic }}</string>
+    <string>{{ logic | e }}</string>
 
     <key>StandardOutPath</key>
-    <string>{{ launchd_logs }}/reflect-stdout.log</string>
+    <string>{{ launchd_logs | e }}/reflect-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>{{ launchd_logs }}/reflect-stderr.log</string>
+    <string>{{ launchd_logs | e }}/reflect-stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

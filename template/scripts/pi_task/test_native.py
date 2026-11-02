@@ -35,7 +35,33 @@ class NativePolicyTests(unittest.TestCase):
 
     def test_content_dirs_default_to_single_dir_layout(self):
         dirs = native.content_dirs({}, self.vault)
-        self.assertEqual(dirs, {"root": self.vault, **{name: self.vault / name for name in ("output", "working", "data", "logs")}, "deliverables": [self.vault / "output"], "changelog": None})
+        self.assertEqual(dirs, {"root": self.vault, **{name: self.vault / name for name in ("output", "working", "data", "logs")}, "deliverables": [self.vault / "output"], "changelog": None,
+                                "state": None, "activity": self.vault / "logs" / "activity.md", "notes": None})
+
+    def test_host_state_and_activity_log_are_protected(self):
+        content = self.root / "content"
+        dirs = native.content_dirs({"paths": {"content_root": str(content), "state_root": str(content / "output" / "private")}}, self.vault)
+        with self.assertRaises(ValueError):  # state inside a writable root
+            native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        dirs = native.content_dirs({"paths": {"content_root": str(content), "state_root": "host-state"}}, self.vault)
+        policy = native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        self.assertIn(str(self.vault / "host-state"), policy["denyRead"])
+        self.assertIn(str(self.vault / "host-state"), policy["denyWrite"])
+        self.assertIn(str(content / "logs" / "activity.md"), policy["denyWrite"])
+
+    def test_notes_root_matches_skill_resolution(self):
+        content = self.root / "content"
+        dirs = native.content_dirs({"paths": {"content_root": str(content), "notes_root": "Notes"}}, self.vault)
+        self.assertEqual(dirs["notes"], self.vault / "Notes")
+        dirs = native.content_dirs({"paths": {"content_root": str(content)}, "notes": {"vault_path": "Notes"}}, self.vault)
+        self.assertEqual(dirs["notes"], content / "Notes")
+
+    def test_content_dirs_resolve_symlinks_like_skills(self):
+        real = self.root / "real-content"
+        real.mkdir()
+        (self.root / "link").symlink_to(real)
+        dirs = native.content_dirs({"paths": {"content_root": str(self.root / "link" / ".." / "real-content")}}, self.vault)
+        self.assertEqual(dirs["root"], (self.root / "link" / ".." / "real-content").resolve())
 
     def test_split_layout_policy_uses_content_root(self):
         content = self.root / "content"

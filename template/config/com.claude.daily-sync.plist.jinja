@@ -11,12 +11,12 @@
 {%- if sync_needs_secrets %}
         <string>/opt/homebrew/bin/op</string>
         <string>run</string>
-        <string>--env-file={{ logic }}/.env</string>
+        <string>--env-file={{ logic | e }}/.env</string>
         <string>--</string>
 {%- endif %}
         <string>/opt/homebrew/bin/uv</string>
         <string>run</string>
-        <string>{{ logic }}/.claude/skills/data-sync/sync_all.py</string>
+        <string>{{ logic | e }}/.claude/skills/data-sync/sync_all.py</string>
         <string>--yes</string>
     </array>
 
@@ -29,13 +29,13 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>{{ logic }}</string>
+    <string>{{ logic | e }}</string>
 
     <key>StandardOutPath</key>
-    <string>{{ launchd_logs }}/sync-stdout.log</string>
+    <string>{{ launchd_logs | e }}/sync-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>{{ launchd_logs }}/sync-stderr.log</string>
+    <string>{{ launchd_logs | e }}/sync-stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

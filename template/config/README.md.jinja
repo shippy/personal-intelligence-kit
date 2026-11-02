@@ -36,13 +36,20 @@ The plists use Homebrew paths for `uv`{% if sync_needs_secrets or schedule_refle
 ### Install
 
 ```bash
-mkdir -p {{ launchd_logs }}
-cp config/com.claude.*.plist ~/Library/LaunchAgents/
-for p in config/com.claude.*.plist; do
-  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/$(basename "$p")
+mkdir -p {{ launchd_logs | quote }}
+# Only the jobs enabled for this vault (`copier update` never deletes a plist that is
+# no longer generated, so a stale one may still sit in config/).
+for job in daily-sync{% if schedule_reflection %} weekly-reflect{% endif %}{% if reflection_reminder %} reflection-reminder{% endif %}; do
+  cp "config/com.claude.$job.plist" ~/Library/LaunchAgents/
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude.$job.plist
 done
 launchctl list | grep com.claude
 ```
+{%- if not schedule_reflection %}
+
+If an older version installed `com.claude.weekly-reflect`, the uninstall loop below removes it;
+delete `config/com.claude.weekly-reflect.plist` too.
+{%- endif %}
 
 Run a job once now: `launchctl kickstart -k gui/$(id -u)/com.claude.daily-sync`.
 

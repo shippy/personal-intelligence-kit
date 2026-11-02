@@ -274,3 +274,28 @@ vault_path = "Notes"
 """)
     monkeypatch.setenv(vc.ENV_VAR, str(logic))
     assert vc.notes_root() == (tmp_path / "content" / "Notes").resolve()
+
+
+def test_write_concept_refuses_symlinked_file_and_changelog(tmp_path, monkeypatch):
+    notes = _guarded(tmp_path, monkeypatch)
+    victim = notes / "victim.md"
+    victim.write_text("keep\n")
+    out = tmp_path / "v" / "output" / "reports"
+    out.mkdir(parents=True)
+    (out / "x.md").symlink_to(victim)
+    with pytest.raises(vc.VaultConfigError):
+        okf.write_concept("reports", "x", type="t", title="T", body="b")
+    (out / "x.md").unlink()
+    (tmp_path / "v" / "output" / "log.md").symlink_to(victim)
+    with pytest.raises(vc.VaultConfigError):
+        okf.write_concept("reports", "y", type="t", title="T", body="b")
+    assert victim.read_text() == "keep\n"
+
+
+def test_database_and_state_paths_inside_notes_are_refused(tmp_path, monkeypatch):
+    notes = _guarded(tmp_path, monkeypatch, f'[sources.browser]\nenabled = true\n[data]\nbrowser = "{tmp_path}/Notes/b.db"\n[paths]\nstate_root = "{tmp_path}/Notes/state"\n')
+    with pytest.raises(vc.VaultConfigError):
+        vc.browser_db_path()
+    with pytest.raises(vc.VaultConfigError):
+        vc.state_dir()
+    assert notes.exists()

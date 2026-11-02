@@ -3,15 +3,15 @@
 # Install with: crontab -e  (then paste these lines)
 
 # Daily data sync at 20:00{% if not sync_needs_secrets %} (no secrets needed: no op run){% endif %}
-0 20 * * * cd {{ logic }} && {% if sync_needs_secrets %}/usr/bin/env op run --env-file=.env -- {% endif %}uv run .claude/skills/data-sync/sync_all.py --yes >> {{ launchd_logs }}/sync-cron.log 2>&1
+0 20 * * * cd {{ logic | quote }} && {% if sync_needs_secrets %}/usr/bin/env op run --env-file=.env -- {% endif %}uv run .claude/skills/data-sync/sync_all.py --yes >> {{ (launchd_logs ~ '/sync-cron.log') | quote }} 2>&1
 {%- if schedule_reflection %}
 
 # Weekly reflection, Sunday 09:00
-0 9 * * 0 cd {{ logic }} && /usr/bin/env op run --env-file=.env -- uv run --project .claude/skills/weekly-reflection .claude/skills/weekly-reflection/weekly_reflection.py >> {{ launchd_logs }}/reflect-cron.log 2>&1
+0 9 * * 0 cd {{ logic | quote }} && /usr/bin/env op run --env-file=.env -- uv run --project .claude/skills/weekly-reflection .claude/skills/weekly-reflection/weekly_reflection.py >> {{ (launchd_logs ~ '/reflect-cron.log') | quote }} 2>&1
 {%- endif %}
 {%- if reflection_reminder %}
 
 # Weekly reflection reminder, Sunday 10:00 (the script calls terminal-notifier; set
 # REFLECTION_REMINDER_NOTIFIER to a wrapper with the same flags elsewhere)
-0 10 * * 0 /bin/bash {{ logic }}/scripts/reflection-reminder.sh {{ reflections_dir }} >> {{ launchd_logs }}/reflection-reminder.log 2>&1
+0 10 * * 0 /bin/bash {{ (logic ~ '/scripts/reflection-reminder.sh') | quote }} {{ reflections_dir | quote }} >> {{ (launchd_logs ~ '/reflection-reminder.log') | quote }} 2>&1
 {%- endif %}

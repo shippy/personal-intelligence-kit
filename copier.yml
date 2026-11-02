@@ -92,6 +92,8 @@ output_root:
   validator: >-
     {% if output_root.startswith('/') or output_root.startswith('~') or '..' in output_root %}
     Must be relative to the content root (e.g. "output" or ".").
+    {% elif output_root != '.' and (output_root.startswith('./') or output_root.endswith('/') or '//' in output_root or '/./' in output_root) %}
+    Use "." or a plain relative path such as "output" (no "./" prefix or trailing "/").
     {% endif %}
 
 # ============================================================
@@ -258,5 +260,17 @@ _message_after_copy: |
   {%- endif %}
 
   See docs/split-layout.md.
+  {% endif -%}
+  {% if host_web != 'allow' -%}
+  Web policy ({{ host_web }}): .claude/settings.local.json is never overwritten. If it already
+  existed, the {{ host_web }} rules were NOT applied; add these to its permissions.{{ host_web }}:
+      "WebFetch", "WebSearch", "mcp__plugin_exa_exa__*", "Bash(curl:*)", "Bash(wget:*)"
+  and remove any matching "allow" entries.
+
+  {% endif -%}
+  {% if enable_contacts_mcp -%}
+  Contacts MCP: no longer in .mcp.json. Register it once in local scope (see SETUP.md):
+      claude mcp add --scope local ...
+
   {% endif -%}
   Next: read SETUP.md.

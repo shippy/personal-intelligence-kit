@@ -84,8 +84,9 @@ def test_single_dir_settings(single):
     settings = json.loads((single / ".claude" / "settings.json").read_text())["permissions"]
     assert "Edit(~/Documents/Notes/**)" in settings["deny"]
     assert "NotebookEdit(~/Documents/Notes/**)" in settings["deny"]
-    assert "Edit(./.claude/settings.local.json)" in settings["deny"]
-    assert "Write(./.claude/hooks/**)" in settings["deny"]
+    assert f"Edit(/{single}/.claude/settings.local.json)" in settings["deny"]
+    assert f"Write(/{single}/.claude/hooks/**)" in settings["deny"]
+    assert not any("(./" in rule for rule in settings["deny"])
     assert not {"Bash(python3:*)", "Bash(cat:*)", "Bash(find:*)"} & set(settings["allow"])
     assert "Bash(uv run:*)" in settings["allow"]
     assert "additionalDirectories" not in settings
@@ -199,3 +200,24 @@ def test_gitignore_follows_output_layout(tmp_path):
     assert "output/" not in lines
     custom = render(tmp_path / "custom", output_root="out")
     assert "out/" in (custom / ".gitignore").read_text().splitlines()
+
+
+def test_paths_with_spaces_and_xml_characters(tmp_path):
+    content = tmp_path / "Research & \"Notes\""
+    logic = render(tmp_path / "My Vault", content_root=str(content), state_root=str(tmp_path / "st & ate"),
+                   reflection_reminder=True)
+    settings = json.loads((logic / ".claude" / "settings.json").read_text())
+    assert settings["permissions"]["additionalDirectories"] == [str(content)]
+    reminder = plist(logic / "config" / "com.claude.reflection-reminder.plist")
+    assert reminder["ProgramArguments"][2] == f"{content}/output/reflections"
+    assert plist(logic / "config" / "com.claude.daily-sync.plist")["StandardOutPath"].startswith(str(tmp_path / "st & ate"))
+    cron = [line for line in (logic / "config" / "crontab.example").read_text().splitlines() if "reflection-reminder.sh" in line][0]
+    import shlex
+    words = shlex.split(cron.split(" ", 5)[5])
+    assert words[1:3] == [f"{logic}/scripts/reflection-reminder.sh", f"{content}/output/reflections"]
+
+
+def test_output_root_rejects_equivalent_spellings(tmp_path):
+    for bad in ("./output", "./", "output/"):
+        with pytest.raises(subprocess.CalledProcessError):
+            render(tmp_path / bad.replace("/", "_").replace(".", "d"), output_root=bad)

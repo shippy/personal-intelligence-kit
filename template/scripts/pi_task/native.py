@@ -49,9 +49,20 @@ def content_dirs(config, vault):
     """
     def resolve(base, raw):
         path = Path(raw).expanduser()
-        return Path(os.path.normpath(path if path.is_absolute() else base / path))
-    root = resolve(vault, config.get("paths", {}).get("content_root") or ".")
+        return (path if path.is_absolute() else base / path).resolve()  # same as vault_config: symlinks first
+    paths = config.get("paths", {})
+    root = resolve(vault, paths.get("content_root") or ".")
     dirs = {"root": root, **{name: resolve(root, config.get(name, {}).get("root", name)) for name in ("output", "working", "data", "logs")}}
+    # Host-only files the sandbox must not touch: configured state (auth records) and the activity log.
+    dirs["state"] = resolve(vault, paths["state_root"]) if paths.get("state_root") else None
+    dirs["activity"] = resolve(root, config.get("logs", {}).get("activity", "logs/activity.md"))
+    # Notes vault, as the skills' write guard sees it: [paths].notes_root against the logic dir,
+    # else [notes].vault_path against the content root.
+    if paths.get("notes_root"):
+        dirs["notes"] = resolve(vault, paths["notes_root"])
+    else:
+        raw = config.get("notes", {}).get("vault_path")
+        dirs["notes"] = resolve(root, raw) if raw else None
     output = dirs["output"]
     if output in (root, vault) or any(output in dirs[name].parents or output == dirs[name] for name in ("working", "data", "logs")) or output in vault.parents:
         # Flattened output (output.root = "."): never grant the whole content/logic root,
@@ -81,10 +92,11 @@ def native_policy(profile, checkout, vault, para, state_root, temporary, referen
     readable += [Path(path) for path in ("/bin", "/sbin", "/usr", "/System", "/Library", "/opt/homebrew", "/etc", "/private/etc", "/dev/null", "/dev/urandom")]
     changelog = [dirs["changelog"]] if dirs.get("changelog") else []
     writable = [*dirs["deliverables"], *changelog, dirs["working"], dirs["logs"]] if profile == "pkm" else project_roots
+    host_state = [dirs["state"]] if dirs.get("state") else []
     for path in writable:
-        if path.is_symlink() or overlap(path.resolve(), para) or overlap(path.resolve(), state_root):
+        if path.is_symlink() or any(overlap(path.resolve(), root) for root in (para, state_root, *host_state)):
             raise ValueError(f"Unsafe writable root: {path}")
-    forbidden = [*notes_roots, state_root, dirs["data"], ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
+    forbidden = [*notes_roots, state_root, *host_state, dirs["data"], ASSETS, EXTENSION, Path.home() / ".pi", Path.home() / ".config/herdr", Path.home() / ".local/bin/pi-task"]
     forbidden += [root / name for root in project_roots for name in (".git", ".pi", ".agents", ".claude")]
     forbidden += [path for path in references if not (profile == "project" and any(path == root or path in root.parents for root in project_roots))]
     for root in project_roots:
@@ -94,6 +106,9 @@ def native_policy(profile, checkout, vault, para, state_root, temporary, referen
             pass
     secrets = [Path.home() / name for name in (".ssh", ".aws", ".gnupg", ".config/gcloud", ".netrc", ".git-credentials", ".pi/agent/auth.json")]
     secrets += [root / name for root in (*project_roots, vault, *references) for name in (".env", ".envrc", ".env.local")]
+    secrets += host_state
+    if profile == "pkm" and dirs.get("activity"):
+        forbidden.append(dirs["activity"])  # host-only log; sandboxes must not forge entries
     if profile == "project":
         forbidden += [vault] + ([dirs["root"]] if dirs["root"] != vault else [])
     return {
@@ -137,12 +152,12 @@ def run(args, stack):
     vault = args.vault.expanduser().resolve(strict=True)
     config = tomllib.loads((vault / "vault.toml").read_text())
     notes = config.get("notes", {})
+    dirs = content_dirs(config, vault)
     para = None
     if notes.get("app", "none") != "none":
-        if not notes.get("vault_path"):
-            raise ValueError("notes.vault_path is required when a notes source is enabled")
-        para = Path(notes["vault_path"]).expanduser()
-        para = (para if para.is_absolute() else vault / para).resolve(strict=True)
+        if dirs["notes"] is None:
+            raise ValueError("notes.vault_path (or paths.notes_root) is required when a notes source is enabled")
+        para = dirs["notes"].resolve(strict=True)
     references = reference_repositories(config, vault, para)
     if args.new and args.task or args.repo and not args.new or args.add_repo and not args.task:
         raise ValueError("Use --repo with --new, or --add-repo with --task; --new and --task are exclusive")
@@ -198,7 +213,7 @@ def run(args, stack):
     for root in task_roots:
         print(f"Task write root: {root}", flush=True)
     if args.describe:
-        print(json.dumps(native_policy(profile, checkout, vault, para, state_root, Path(tempfile.gettempdir()) / "pi-task-session", references, task_roots, content_dirs(config, vault)), indent=2))
+        print(json.dumps(native_policy(profile, checkout, vault, para, state_root, Path(tempfile.gettempdir()) / "pi-task-session", references, task_roots, dirs), indent=2))
         return
     provider, model_id, _, models = local_model(Path.home())
     original = json.loads((Path.home() / ".pi/agent/models.json").read_text())["providers"][provider]["baseUrl"]
@@ -225,7 +240,6 @@ def run(args, stack):
         runtime = Path(runtime_name)
         scratch = Path(scratch_name)
         (runtime / "extensions").mkdir()
-        dirs = content_dirs(config, vault)
         policy = native_policy(profile, checkout, vault, para, state_root, scratch, references, task_roots, dirs)
         prepare_writable(policy["writable"], [dirs["changelog"]] if dirs["changelog"] else [])
         (runtime / "extensions/seatbelt.json").write_text(json.dumps(policy))

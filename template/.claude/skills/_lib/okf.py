@@ -63,6 +63,7 @@ def write_concept(
     target_dir = assert_writable(Path(out_dir) if out_dir is not None else output_dir(subdir))
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"{slug}.md"
+    assert_writable(path)  # the file itself may be a symlink planted into the notes vault
     existed = path.exists()
     fields: dict[str, Any] = {
         "type": type,
@@ -82,6 +83,7 @@ def _append_log(root: Path, date: str, kind: str, title: str) -> None:
     root = assert_writable(root)
     root.mkdir(parents=True, exist_ok=True)
     log_path = root / "log.md"
+    assert_writable(log_path)
     entry = f"* **{kind}**: {title}"
     existing = log_path.read_text() if log_path.exists() else ""
     heading = f"## {date}"
