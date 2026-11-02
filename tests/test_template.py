@@ -188,3 +188,14 @@ def test_reminder_notifies_when_reflection_is_old(tmp_path, notifier):
     (tmp_path / "unrelated.md").write_text("fresh but not a reflection")
     run_reminder(tmp_path, fake)
     assert log.exists()
+
+
+def test_gitignore_follows_output_layout(tmp_path):
+    flat = render(tmp_path / "flat", output_root=".")
+    lines = (flat / ".gitignore").read_text().splitlines()
+    for entry in ["reports/", "alerts/", "reflections/", "briefings/", "drafts-for-review/",
+                  "/log.md", "/index.md", "inbox/", "data/", "logs/", "working/"]:
+        assert entry in lines
+    assert "output/" not in lines
+    custom = render(tmp_path / "custom", output_root="out")
+    assert "out/" in (custom / ".gitignore").read_text().splitlines()

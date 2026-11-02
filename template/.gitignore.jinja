@@ -6,10 +6,21 @@
 .claude/settings.local.json
 
 # User data (actual content stays local)
-output/
+{%- if output_root in ['.', ''] %}
+reports/
+alerts/
+reflections/
+briefings/
+drafts-for-review/
+/index.md
+/log.md
+{%- else %}
+{{ output_root.strip("/") }}/
+{%- endif %}
 working/
 logs/
 data/
+inbox/
 
 # Python
 __pycache__/

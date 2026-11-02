@@ -246,3 +246,31 @@ def test_content_link_follows_output_root(tmp_path, monkeypatch):
     _write(tmp_path / "v", f'[paths]\ncontent_root = "{tmp_path / "c"}"\n\n[output]\nroot = "."\n')
     assert vc.content_link(vc.output_dir("reports") / "x-2026.md") == "reports/x-2026"
     assert vc.content_link("/elsewhere/file.md") == "/elsewhere/file.md"
+
+
+def test_relative_notes_root_resolves_against_logic(tmp_path, monkeypatch):
+    logic = tmp_path / "logic"
+    _write(logic, """
+[paths]
+content_root = "../content"
+notes_root = "Notes"
+""")
+    monkeypatch.setenv(vc.ENV_VAR, str(logic))
+    notes = (logic / "Notes").resolve()
+    assert vc.notes_root() == notes
+    with pytest.raises(vc.VaultConfigError):
+        vc.assert_writable(notes / "x.md")
+    vc.assert_writable(tmp_path / "content" / "Notes" / "x.md")
+
+
+def test_relative_notes_vault_path_resolves_against_content(tmp_path, monkeypatch):
+    logic = tmp_path / "logic"
+    _write(logic, """
+[paths]
+content_root = "../content"
+
+[notes]
+vault_path = "Notes"
+""")
+    monkeypatch.setenv(vc.ENV_VAR, str(logic))
+    assert vc.notes_root() == (tmp_path / "content" / "Notes").resolve()

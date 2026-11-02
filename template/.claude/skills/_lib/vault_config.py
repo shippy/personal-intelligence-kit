@@ -157,9 +157,16 @@ def state_dir() -> Path:
 
 
 def notes_root() -> Optional[Path]:
-    """The read-only notes vault: [paths].notes_root, else [notes].vault_path."""
-    raw = _paths_cfg().get("notes_root") or load_config().get("notes", {}).get("vault_path")
-    return _resolve_against(content_root(), raw) if raw else None
+    """The read-only notes vault: [paths].notes_root, else [notes].vault_path.
+
+    Like every [paths] value, a relative notes_root resolves against the logic root;
+    a relative [notes].vault_path resolves against content_root (v0.7.0 behaviour).
+    """
+    raw = _paths_cfg().get("notes_root")
+    if raw:
+        return _resolve_against(logic_root(), raw)
+    raw = load_config().get("notes", {}).get("vault_path")
+    return expand(raw) if raw else None
 
 
 def data_dir() -> Path:
