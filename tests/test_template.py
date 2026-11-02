@@ -203,7 +203,7 @@ def test_gitignore_follows_output_layout(tmp_path):
 
 
 def test_paths_with_spaces_and_xml_characters(tmp_path):
-    content = tmp_path / "Research & \"Notes\""
+    content = tmp_path / "Research & \"Notes\" \\ 📚"
     logic = render(tmp_path / "My Vault", content_root=str(content), state_root=str(tmp_path / "st & ate"),
                    reflection_reminder=True)
     settings = json.loads((logic / ".claude" / "settings.json").read_text())
