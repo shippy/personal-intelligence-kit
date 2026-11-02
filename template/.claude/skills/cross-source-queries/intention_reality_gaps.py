@@ -37,6 +37,7 @@ from vault_config import (  # noqa: E402
     tasks_db_path,
     source_enabled,
     output_dir,
+    content_link,
     activity_log,
     owner_name,
 )
@@ -699,7 +700,7 @@ def generate_report() -> Optional[Path]:
         f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
         f.write("**Action:** Intention-reality gap analysis\n")
         f.write(f"**Sources:** {', '.join(sources)}\n")
-        f.write(f"**Output:** [[output/reports/intention-reality-{date}]]\n\n---\n")
+        f.write(f"**Output:** [[{content_link(out)}]]\n\n---\n")
     return out
 
 

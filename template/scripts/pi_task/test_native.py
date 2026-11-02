@@ -33,6 +33,28 @@ class NativePolicyTests(unittest.TestCase):
         (self.vault / "working").mkdir()
         self.assertEqual(discover(self.vault / "working", self.vault, self.para), ("pkm", self.vault))
 
+    def test_content_dirs_default_to_single_dir_layout(self):
+        dirs = native.content_dirs({}, self.vault)
+        self.assertEqual(dirs, {"root": self.vault, **{name: self.vault / name for name in ("output", "working", "data", "logs")}})
+
+    def test_split_layout_policy_uses_content_root(self):
+        content = self.root / "content"
+        config = {"paths": {"content_root": str(content)}, "output": {"root": "."}}
+        dirs = native.content_dirs(config, self.vault)
+        self.assertEqual(dirs["output"], content)
+        self.assertEqual(dirs["data"], content / "data")
+        pkm = native_policy("pkm", self.vault, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        self.assertEqual(pkm["writable"], [str(content), str(content / "working"), str(content / "logs"), str(self.root / "scratch")])
+        self.assertIn(str(content / "data"), pkm["readable"])
+        self.assertNotIn(str(self.vault / "output"), pkm["readable"])
+        project = native_policy("project", self.project, self.vault, self.para, self.root / "state", self.root / "scratch", dirs=dirs)
+        self.assertIn(str(content), project["denyWrite"])
+        self.assertIn(str(self.vault), project["denyWrite"])
+
+    def test_relative_content_root_resolves_against_vault(self):
+        dirs = native.content_dirs({"paths": {"content_root": "../content"}}, self.vault)
+        self.assertEqual(dirs["root"], self.root / "content")
+
     def test_pkm_writes_only_output_working_logs_and_scratch(self):
         policy = self.policy("pkm", self.vault)
         self.assertEqual(policy["writable"], [str(self.vault / name) for name in ("output", "working", "logs")] + [str(self.root / "scratch")])

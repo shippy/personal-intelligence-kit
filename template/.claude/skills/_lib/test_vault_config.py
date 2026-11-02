@@ -236,3 +236,13 @@ def test_no_skill_joins_vault_root_with_data():
         if not p.name.startswith("test_") and 'vault_root() / "data"' in p.read_text()
     ]
     assert offenders == []
+
+
+def test_content_link_follows_output_root(tmp_path, monkeypatch):
+    _write(tmp_path / "v", '[output]\nroot = "output"\n')
+    monkeypatch.setenv(vc.ENV_VAR, str(tmp_path / "v"))
+    assert vc.content_link(vc.output_dir("reports") / "x-2026.md") == "output/reports/x-2026"
+    vc.clear_cache()
+    _write(tmp_path / "v", f'[paths]\ncontent_root = "{tmp_path / "c"}"\n\n[output]\nroot = "."\n')
+    assert vc.content_link(vc.output_dir("reports") / "x-2026.md") == "reports/x-2026"
+    assert vc.content_link("/elsewhere/file.md") == "/elsewhere/file.md"

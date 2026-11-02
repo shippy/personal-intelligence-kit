@@ -36,6 +36,7 @@ from .vault_config import (  # noqa: F401
     browser_db_path,
     git_commits_db_path,
     output_dir,
+    content_link,
     logs_dir,
     activity_log,
 )

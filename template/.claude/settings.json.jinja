@@ -1,12 +1,11 @@
+{#- Permission rule paths: "//abs" = filesystem root, "~/" = home, "./" = session cwd. -#}
+{%- macro rule_path(p) -%}{{ '/' ~ p if p.startswith('/') else p }}{%- endmacro -%}
 {
   "permissions": {
     "allow": [
       "Bash(ls:*)",
       "Bash(tree:*)",
-      "Bash(cat:*)",
       "Bash(grep:*)",
-      "Bash(find:*)",
-      "Bash(python3:*)",
       "Bash(uv run:*)",
       "Bash(uv sync:*)",
       "Bash(sqlite3:*)",
@@ -14,10 +13,22 @@
       "Bash(notify-send:*)",
       "Bash(mbsync:*)",
       "Bash(notmuch:*)"
-    ]{% if notes_app != 'none' %},
+    ],
     "deny": [
-      "Edit: {{ notes_vault_path }}/**",
-      "Write: {{ notes_vault_path }}/**"
+{%- if notes_app != 'none' %}
+      "Edit({{ rule_path(notes_vault_path) }}/**)",
+      "Write({{ rule_path(notes_vault_path) }}/**)",
+      "NotebookEdit({{ rule_path(notes_vault_path) }}/**)",
+{%- endif %}
+      "Edit(./.claude/settings.json)",
+      "Write(./.claude/settings.json)",
+      "Edit(./.claude/settings.local.json)",
+      "Write(./.claude/settings.local.json)",
+      "Edit(./.claude/hooks/**)",
+      "Write(./.claude/hooks/**)"
+    ]{% if content_root != '.' %},
+    "additionalDirectories": [
+      "{{ content_root | expanduser }}"
     ]{% endif %}
   }
 }

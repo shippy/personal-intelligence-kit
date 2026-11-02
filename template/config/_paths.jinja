@@ -1,0 +1,7 @@
+{#- Shared path variables for config/*.jinja. launchd does not expand "~", so expand here. -#}
+{%- set logic = vault_path | expanduser -%}
+{%- set content = logic if content_root == '.' else content_root | expanduser -%}
+{%- set launchd_logs = (state_root | expanduser) ~ '/launchd' if state_root else content ~ '/logs' -%}
+{%- set output_abs = content if output_root in ['.', ''] else content ~ '/' ~ output_root -%}
+{%- set reflections_dir = output_abs ~ '/reflections' -%}
+{%- set sync_needs_secrets = enable_tasks and task_provider == 'todoist' -%}

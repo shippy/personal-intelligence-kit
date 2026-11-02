@@ -9,7 +9,11 @@ Copier generated a vault with:
 - `vault.toml` — runtime config (edit this to change sources/paths later)
 - `.env` — 1Password secret references (gitignored)
 - `.claude/skills/` — the skills that do the actual work
-- `output/`, `working/`, `logs/`, `data/` — your working directories
+{%- if content_root == '.' %}
+- `output/`, `working/`, `logs/`, `data/`, `inbox/` — your working directories (created on demand)
+{%- else %}
+- a **split layout**: this repo holds the logic; content (`output/`, `working/`, `logs/`, `data/`, `inbox/`) lives in `{{ content_root }}`. See `docs/split-layout.md`
+{%- endif %}
 
 ## First Steps
 
@@ -33,13 +37,28 @@ Store credentials in the 1Password `Development` vault. Environment files contai
 `op://Development/<item>/credential` references; keep plaintext keys in 1Password.
 Authenticate the `op` CLI before running commands that need credentials.
 
+Resolve secrets **per call** with `op run --env-file=.env -- <command>`. Don't add a dotenv
+`.envrc` (direnv): it exports `.env` into every shell and every agent session started here.
+
 - `OPENAI_API_KEY` — required for weekly-reflection
 - `ANTHROPIC_API_KEY` — optional for stale-drafts LLM ranking
-{%- if enable_contacts_mcp %}
-- `CLAY_API_KEY` — for Clay.earth contacts MCP
-{%- endif %}
 {%- if enable_tasks and task_provider == 'todoist' %}
 - `TODOIST_API_TOKEN` — from https://todoist.com/app/settings/integrations/developer
+{%- endif %}
+
+{%- if enable_contacts_mcp %}
+#### Contacts MCP (host-only)
+
+Contacts are personal data, so the MCP server is registered per machine in **local scope**
+instead of the tracked `.mcp.json`. Sandbox clones of this repo then never carry it, and its
+OAuth token stays on the host:
+
+```bash
+claude mcp add --scope local --transport http <name> <server-url>   # e.g. your Clay/Mesh endpoint
+claude mcp list
+```
+
+Leave the server's write tools on "ask": an injected email should not be able to edit your CRM.
 {%- endif %}
 
 ### 3. Set up each enabled data source
@@ -124,7 +143,7 @@ Once you have some data:
 
 ```bash
 op run --env-file=.env -- uv run --project .claude/skills/weekly-reflection .claude/skills/weekly-reflection/weekly_reflection.py
-# Writes output/reflections/YYYY-MM-DD-weekly-reflection.md
+# Writes {{ '' if output_root in ['.', ''] else output_root ~ '/' }}reflections/YYYY-MM-DD-weekly-reflection.md{{ ' under ' ~ content_root if content_root != '.' else '' }}
 ```
 
 ## What to Do Next

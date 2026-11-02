@@ -41,12 +41,26 @@ def reference_repositories(config, vault, para):
     return references
 
 
-def native_policy(profile, checkout, vault, para, state_root, temporary, references=(), task_roots=()):
+def content_dirs(config, vault):
+    """Content directories from vault.toml, mirroring _lib/vault_config.py (stdlib only).
+
+    [paths].content_root resolves against the vault (logic) dir; output/working/data/logs
+    roots resolve against the content root. Defaults reproduce the single-dir layout.
+    """
+    def resolve(base, raw):
+        path = Path(raw).expanduser()
+        return Path(os.path.normpath(path if path.is_absolute() else base / path))
+    root = resolve(vault, config.get("paths", {}).get("content_root") or ".")
+    return {"root": root, **{name: resolve(root, config.get(name, {}).get("root", name)) for name in ("output", "working", "data", "logs")}}
+
+
+def native_policy(profile, checkout, vault, para, state_root, temporary, references=(), task_roots=(), dirs=None):
+    dirs = dirs or content_dirs({}, vault)
     project_roots = list(task_roots) if task_roots else [checkout]
     notes_roots = [para] if para is not None else []
-    readable = [*project_roots, *notes_roots, vault / "output", vault / "working", vault / "data", ASSETS, *references]
+    readable = [*project_roots, *notes_roots, dirs["output"], dirs["working"], dirs["data"], ASSETS, *references]
     readable += [Path(path) for path in ("/bin", "/sbin", "/usr", "/System", "/Library", "/opt/homebrew", "/etc", "/private/etc", "/dev/null", "/dev/urandom")]
-    writable = [vault / name for name in ("output", "working", "logs")] if profile == "pkm" else project_roots
+    writable = [dirs[name] for name in ("output", "working", "logs")] if profile == "pkm" else project_roots
     for path in writable:
         if path.is_symlink() or overlap(path.resolve(), para) or overlap(path.resolve(), state_root):
             raise ValueError(f"Unsafe writable root: {path}")
@@ -61,7 +75,7 @@ def native_policy(profile, checkout, vault, para, state_root, temporary, referen
     secrets = [Path.home() / name for name in (".ssh", ".aws", ".gnupg", ".config/gcloud", ".netrc", ".git-credentials", ".pi/agent/auth.json")]
     secrets += [root / name for root in (*project_roots, vault, *references) for name in (".env", ".envrc", ".env.local")]
     if profile == "project":
-        forbidden += [vault]
+        forbidden += [vault] + ([dirs["root"]] if dirs["root"] != vault else [])
     return {
         "enabled": True, "failClosed": True,
         "readable": [str(path) for path in readable] + [str(temporary)],
@@ -164,7 +178,7 @@ def run(args, stack):
     for root in task_roots:
         print(f"Task write root: {root}", flush=True)
     if args.describe:
-        print(json.dumps(native_policy(profile, checkout, vault, para, state_root, Path(tempfile.gettempdir()) / "pi-task-session", references, task_roots), indent=2))
+        print(json.dumps(native_policy(profile, checkout, vault, para, state_root, Path(tempfile.gettempdir()) / "pi-task-session", references, task_roots, content_dirs(config, vault)), indent=2))
         return
     provider, model_id, _, models = local_model(Path.home())
     original = json.loads((Path.home() / ".pi/agent/models.json").read_text())["providers"][provider]["baseUrl"]
@@ -191,7 +205,7 @@ def run(args, stack):
         runtime = Path(runtime_name)
         scratch = Path(scratch_name)
         (runtime / "extensions").mkdir()
-        policy = native_policy(profile, checkout, vault, para, state_root, scratch, references, task_roots)
+        policy = native_policy(profile, checkout, vault, para, state_root, scratch, references, task_roots, content_dirs(config, vault))
         for path in policy["writable"]:
             Path(path).mkdir(parents=True, exist_ok=True)
         (runtime / "extensions/seatbelt.json").write_text(json.dumps(policy))

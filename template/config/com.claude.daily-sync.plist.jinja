@@ -1,3 +1,4 @@
+{%- from 'template/config/_paths.jinja' import logic, launchd_logs, reflections_dir, sync_needs_secrets with context -%}
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -7,13 +8,15 @@
 
     <key>ProgramArguments</key>
     <array>
+{%- if sync_needs_secrets %}
         <string>/opt/homebrew/bin/op</string>
         <string>run</string>
-        <string>--env-file={{ vault_path }}/.env</string>
+        <string>--env-file={{ logic }}/.env</string>
         <string>--</string>
+{%- endif %}
         <string>/opt/homebrew/bin/uv</string>
         <string>run</string>
-        <string>{{ vault_path }}/.claude/skills/data-sync/sync_all.py</string>
+        <string>{{ logic }}/.claude/skills/data-sync/sync_all.py</string>
         <string>--yes</string>
     </array>
 
@@ -26,13 +29,13 @@
     </dict>
 
     <key>WorkingDirectory</key>
-    <string>{{ vault_path }}</string>
+    <string>{{ logic }}</string>
 
     <key>StandardOutPath</key>
-    <string>{{ vault_path }}/logs/sync-stdout.log</string>
+    <string>{{ launchd_logs }}/sync-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>{{ vault_path }}/logs/sync-stderr.log</string>
+    <string>{{ launchd_logs }}/sync-stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

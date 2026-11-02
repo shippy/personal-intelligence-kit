@@ -376,6 +376,16 @@ def output_dir(name: str = "root") -> Path:
     return expand(rel) if rel else expand(root) / name
 
 
+def content_link(path: Path | str) -> str:
+    """Wikilink target for a content file: its path relative to content_root, without .md."""
+    p = Path(path).expanduser().resolve()
+    try:
+        rel = p.relative_to(content_root())
+    except ValueError:
+        return str(p)
+    return str(rel.with_suffix("") if rel.suffix == ".md" else rel)
+
+
 def logs_dir() -> Path:
     return expand(load_config().get("logs", {}).get("root", "logs"))
 

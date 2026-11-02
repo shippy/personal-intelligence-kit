@@ -1,0 +1,12 @@
+{%- set kind = 'deny' if host_web == 'deny' else 'ask' -%}
+{
+  "permissions": {
+    "{{ kind }}": [
+      "WebFetch",
+      "WebSearch",
+      "mcp__plugin_exa_exa__*",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
+    ]
+  }
+}

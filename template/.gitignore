@@ -1,6 +1,9 @@
-# Secrets
+# Secrets (no dotenv .envrc: resolve op:// refs per call with `op run --env-file=.env`)
 .env
 .envrc
+
+# Host-only Claude settings (web policy, local MCP servers, approvals)
+.claude/settings.local.json
 
 # User data (actual content stays local)
 output/

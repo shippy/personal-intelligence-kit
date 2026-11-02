@@ -5,6 +5,7 @@ _answers_file: .copier-answers.yml
 
 _skip_if_exists:
   - ".env"
+  - ".claude/settings.local.json"
   - "output/**"
   - "logs/**"
   - "data/**"
@@ -16,6 +17,8 @@ _exclude:
   - "*.py[co]"
   - ".venv"
   - ".DS_Store"
+  - "config/_paths"
+  - "config/_paths.jinja"
   # Conditionally exclude skill directories when their source is disabled
   - "{{ '.claude/skills/email-ingest' if not enable_email else 'NEVER_MATCH' }}"
   - "{{ '.claude/skills/email-analyzer' if not enable_email else 'NEVER_MATCH' }}"
@@ -27,6 +30,10 @@ _exclude:
   - "{{ '.claude/skills/draft-coach' if notes_app == 'none' else 'NEVER_MATCH' }}"
   - "{{ '.claude/skills/stale-drafts' if notes_app == 'none' else 'NEVER_MATCH' }}"
   - "{{ 'config' if not enable_scheduled_tasks else 'NEVER_MATCH' }}"
+  - "{{ 'config/com.claude.weekly-reflect.plist' if not schedule_reflection else 'NEVER_MATCH' }}"
+  - "{{ 'config/com.claude.reflection-reminder.plist' if not reflection_reminder else 'NEVER_MATCH' }}"
+  - "{{ 'scripts/reflection-reminder.sh' if not (enable_scheduled_tasks and reflection_reminder) else 'NEVER_MATCH' }}"
+  - "{{ '.claude/settings.local.json' if host_web == 'allow' else 'NEVER_MATCH' }}"
   - "{{ 'docs/SETUP-email.md' if not enable_email else 'NEVER_MATCH' }}"
   - "{{ 'docs/SETUP-browser.md' if not enable_browser else 'NEVER_MATCH' }}"
   - "{{ 'docs/SETUP-journal.md' if not enable_journal else 'NEVER_MATCH' }}"
@@ -48,8 +55,44 @@ owner_name:
 
 vault_path:
   type: str
-  help: "Absolute path where this vault lives (used in launchd plists and scheduled tasks)"
+  help: >-
+    Absolute path of this generated repo, the logic dir (CLAUDE.md, .claude/, config/,
+    scripts/). Sessions start here. Used in launchd plists and scheduled tasks.
   default: "~/Documents/{{ vault_name | lower | replace(' ', '-') }}"
+
+# ============================================================
+# Layout (single-dir or split logic/content)
+# ============================================================
+
+content_root:
+  type: str
+  help: >-
+    Where content lives (output/, data/, logs/, working/, inbox/). "." keeps everything
+    inside the logic dir (single-dir layout, as before v0.8.0). An absolute path puts
+    content in a separate directory that is never part of this repo.
+  default: "."
+  validator: >-
+    {% if content_root != '.' and not (content_root.startswith('/') or content_root.startswith('~')) %}
+    Use "." or an absolute path (~ is allowed).
+    {% endif %}
+
+state_root:
+  type: str
+  help: >-
+    Host-only state (auth records, launchd logs), never mounted into sandboxes.
+    Leave empty to keep state in data/ and launchd logs in logs/ (single-dir behaviour).
+  default: "{{ '' if content_root == '.' else '~/.local/state/' ~ (vault_name | lower | replace(' ', '-')) }}"
+
+output_root:
+  type: str
+  help: >-
+    Output directory relative to the content root. "output" (default) or "." to put
+    reports/, alerts/, reflections/ … directly at the content root.
+  default: "output"
+  validator: >-
+    {% if output_root.startswith('/') or output_root.startswith('~') or '..' in output_root %}
+    Must be relative to the content root (e.g. "output" or ".").
+    {% endif %}
 
 # ============================================================
 # Notes / Knowledge Base
@@ -161,8 +204,25 @@ task_db_path:
 
 enable_contacts_mcp:
   type: bool
-  help: "Enable contacts provider? (Clay MCP server — requires CLAY_API_KEY)"
+  help: >-
+    Document a contacts MCP (e.g. Clay/Mesh)? It is registered per machine with
+    `claude mcp add --scope local`, not in the tracked .mcp.json.
   default: false
+
+# ============================================================
+# Security
+# ============================================================
+
+host_web:
+  type: str
+  help: >-
+    Agent web tools (WebFetch, WebSearch, Exa, curl/wget) in host sessions of this vault.
+    "deny"/"ask" generate a gitignored .claude/settings.local.json; "allow" generates nothing.
+  choices:
+    Allow (no local settings file): allow
+    Ask every time: ask
+    Deny (do web research in a sandbox instead): deny
+  default: allow
 
 # ============================================================
 # Scheduling
@@ -172,3 +232,31 @@ enable_scheduled_tasks:
   type: bool
   help: "Generate launchd plist templates for scheduled sync/reflection runs?"
   default: true
+
+schedule_reflection:
+  type: bool
+  help: >-
+    Run the weekly reflection unattended from launchd? It needs an LLM API key via
+    1Password, so it only works with unattended `op` authentication.
+  default: false
+  when: "{{ enable_scheduled_tasks }}"
+
+reflection_reminder:
+  type: bool
+  help: "Sunday reminder notification when no weekly reflection was written in the last 6 days?"
+  default: "{{ not schedule_reflection }}"
+  when: "{{ enable_scheduled_tasks }}"
+
+_message_after_copy: |
+  {% if content_root != '.' -%}
+  Split layout: content lives outside this repo, in {{ content_root }}.
+  Create the content dirs once (skills also create them on demand):
+
+      mkdir -p {{ content_root }}/data {{ content_root }}/logs {{ content_root }}/working {{ content_root }}/inbox/research{% if output_root != '.' %} {{ content_root }}/{{ output_root }}{% endif %}
+  {%- if state_root %}
+      mkdir -p {{ state_root }}/launchd
+  {%- endif %}
+
+  See docs/split-layout.md.
+  {% endif -%}
+  Next: read SETUP.md.

@@ -24,6 +24,7 @@ from vault_config import (  # noqa: E402
     load_config,
     vault_root,
     output_dir,
+    content_link,
     activity_log,
     owner_name,
 )
@@ -121,7 +122,7 @@ class WeeklyReflectionOrchestrator:
 **Action:** Qualitative weekly reflection
 **Sources used:** {', '.join(sources_used)}
 **Outputs:**
-- [[output/reflections/{self.review_date}-weekly-reflection]]
+- [[{content_link(output_dir('reflections') / f'{self.review_date}-weekly-reflection.md')}]]
 **Stats:**
 - Journal entries: {len(text.journal_entries)}
 - Tasks: {len(text.tasks['created'])} created, {len(text.tasks['completed'])} completed
