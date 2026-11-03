@@ -6,9 +6,16 @@
     <key>Label</key>
     <string>com.claude.reflection-reminder</string>
 
-    <!-- No secrets, no Python: notifies only if no weekly reflection exists from the last 6 days. -->
+    <!-- No secrets, no Python: notifies only if no weekly reflection exists from the last 6 days.
+         Started through uv: macOS privacy protection (TCC) blocks a bare /bin/bash launched by
+         launchd from reading ~/Documents, while uv has Full Disk Access (see config/README.md)
+         and the script inherits it. -->
     <key>ProgramArguments</key>
     <array>
+        <string>/opt/homebrew/bin/uv</string>
+        <string>run</string>
+        <string>--no-project</string>
+        <string>--</string>
         <string>/bin/bash</string>
         <string>{{ logic | e }}/scripts/reflection-reminder.sh</string>
         <string>{{ reflections_dir | e }}</string>

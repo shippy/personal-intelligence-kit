@@ -71,6 +71,12 @@ On recent macOS, the launchd-spawned process needs Full Disk Access to read emai
 
 - `/opt/homebrew/bin/uv`{% if sync_needs_secrets or schedule_reflection %} and `/opt/homebrew/bin/op`{% endif %} (the binaries invoked by the plists)
 - Or Terminal.app if you prefer to run manually
+{%- if reflection_reminder %}
+
+The reflection reminder is a bash script, but its plist starts it through `uv run --no-project`
+so it inherits uv's access: launchd-started `/bin/bash` itself is refused `~/Documents`
+("Operation not permitted"). Don't grant `/bin/bash` Full Disk Access instead.
+{%- endif %}
 
 System Settings → Privacy & Security → Full Disk Access.
 
