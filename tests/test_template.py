@@ -75,6 +75,7 @@ def test_single_dir_reflection_is_attended_with_reminder(single):
     assert not (single / "config" / "com.claude.weekly-reflect.plist").exists()
     p = plist(single / "config" / "com.claude.reflection-reminder.plist")
     assert p["ProgramArguments"] == [
+        "/opt/homebrew/bin/uv", "run", "--no-project", "--",
         "/bin/bash", f"{single}/scripts/reflection-reminder.sh", f"{single}/output/reflections"]
     assert p["StartCalendarInterval"] == {"Weekday": 0, "Hour": 10, "Minute": 0}
     assert os.access(single / "scripts" / "reflection-reminder.sh", os.X_OK)
@@ -211,7 +212,7 @@ def test_paths_with_spaces_and_xml_characters(tmp_path):
     paths = tomllib.loads((logic / "vault.toml").read_text())["paths"]
     assert paths == {"content_root": str(content), "state_root": str(tmp_path / "st & ate")}
     reminder = plist(logic / "config" / "com.claude.reflection-reminder.plist")
-    assert reminder["ProgramArguments"][2] == f"{content}/output/reflections"
+    assert reminder["ProgramArguments"][-1] == f"{content}/output/reflections"
     assert plist(logic / "config" / "com.claude.daily-sync.plist")["StandardOutPath"].startswith(str(tmp_path / "st & ate"))
     cron = [line for line in (logic / "config" / "crontab.example").read_text().splitlines() if "reflection-reminder.sh" in line][0]
     import shlex
