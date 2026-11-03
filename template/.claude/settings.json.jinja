@@ -15,19 +15,16 @@
       "Bash(notmuch:*)"
     ],
     "deny": [
+{#- Edit(...) covers every built-in file-writing tool (Edit, Write, NotebookEdit);
+    separate Write/NotebookEdit rules never match and Claude Code warns about them. #}
 {%- if notes_app != 'none' %}
       {{ ("Edit(" ~ rule_path(notes_vault_path) ~ "/**)") | tojson }},
-      {{ ("Write(" ~ rule_path(notes_vault_path) ~ "/**)") | tojson }},
-      {{ ("NotebookEdit(" ~ rule_path(notes_vault_path) ~ "/**)") | tojson }},
 {%- endif %}
 {#- Anchored to the logic dir, not "./", so the rules hold whatever the session cwd is. #}
 {%- set claude_dir = rule_path(vault_path.rstrip('/')) ~ '/.claude' %}
       {{ ("Edit(" ~ claude_dir ~ "/settings.json)") | tojson }},
-      {{ ("Write(" ~ claude_dir ~ "/settings.json)") | tojson }},
       {{ ("Edit(" ~ claude_dir ~ "/settings.local.json)") | tojson }},
-      {{ ("Write(" ~ claude_dir ~ "/settings.local.json)") | tojson }},
-      {{ ("Edit(" ~ claude_dir ~ "/hooks/**)") | tojson }},
-      {{ ("Write(" ~ claude_dir ~ "/hooks/**)") | tojson }}
+      {{ ("Edit(" ~ claude_dir ~ "/hooks/**)") | tojson }}
     ]{% if content_root != '.' %},
     "additionalDirectories": [
       {{ (content_root | expanduser) | tojson }}

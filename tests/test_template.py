@@ -84,9 +84,9 @@ def test_single_dir_reflection_is_attended_with_reminder(single):
 def test_single_dir_settings(single):
     settings = json.loads((single / ".claude" / "settings.json").read_text())["permissions"]
     assert "Edit(~/Documents/Notes/**)" in settings["deny"]
-    assert "NotebookEdit(~/Documents/Notes/**)" in settings["deny"]
+    assert not any(rule.startswith(("Write(", "NotebookEdit(")) for rule in settings["deny"])
     assert f"Edit(/{single}/.claude/settings.local.json)" in settings["deny"]
-    assert f"Write(/{single}/.claude/hooks/**)" in settings["deny"]
+    assert f"Edit(/{single}/.claude/hooks/**)" in settings["deny"]
     assert not any("(./" in rule for rule in settings["deny"])
     assert not {"Bash(python3:*)", "Bash(cat:*)", "Bash(find:*)"} & set(settings["allow"])
     assert "Bash(uv run:*)" in settings["allow"]
