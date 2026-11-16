@@ -202,7 +202,7 @@ def safe_write(path: Path | str, text: str, *, append: bool = False) -> Path:
     """Write (or append) text after checking the notes-vault guard. Creates parent dirs."""
     target = assert_writable(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("a" if append else "w") as f:
+    with target.open("a" if append else "w", encoding="utf-8") as f:
         f.write(text)
     return target
 
