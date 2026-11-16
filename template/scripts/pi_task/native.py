@@ -60,9 +60,12 @@ def content_dirs(config, vault):
     dirs = {"root": root, **{name: resolve(root, config.get(name, {}).get("root", name), leaf=name == "data") for name in ("output", "working", "data", "logs")}}
     data = config.get("data", {})
     dirs["databases"] = [resolve(root, value) for key, value in data.items() if key != "root" and isinstance(value, str)]
-    # Host-only files the sandbox must not touch: configured state (auth records) and the activity log.
+    # Host-only files the sandbox must not touch: configured state (auth records) and the activity/sync logs.
     dirs["state"] = resolve(vault, paths["state_root"]) if paths.get("state_root") else None
-    dirs["activity"] = resolve(root, config.get("logs", {}).get("activity", "logs/activity.md"))
+    logs = config.get("logs", {})
+    dirs["activity"] = resolve(root, logs.get("activity", "logs/activity.md"))  # legacy single file
+    dirs["activity_dir"] = resolve(root, logs.get("activity_dir", "logs/activity"))
+    dirs["sync"] = resolve(root, logs.get("sync", "logs/sync.jsonl"))
     # Notes vault, as the skills' write guard sees it: [paths].notes_root against the logic dir,
     # else [notes].vault_path against the content root.
     if paths.get("notes_root"):
@@ -114,8 +117,8 @@ def native_policy(profile, checkout, vault, para, state_root, temporary, referen
     secrets = [Path.home() / name for name in (".ssh", ".aws", ".gnupg", ".config/gcloud", ".netrc", ".git-credentials", ".pi/agent/auth.json")]
     secrets += [root / name for root in (*project_roots, vault, *references) for name in (".env", ".envrc", ".env.local")]
     secrets += host_state
-    if profile == "pkm" and dirs.get("activity"):
-        forbidden.append(dirs["activity"])  # host-only log; sandboxes must not forge entries
+    if profile == "pkm":  # host-only logs; sandboxes must not forge entries
+        forbidden += [dirs[key] for key in ("activity", "activity_dir", "sync") if dirs.get(key)]
     if profile == "project":
         forbidden += [vault] + ([dirs["root"]] if dirs["root"] != vault else [])
     return {
