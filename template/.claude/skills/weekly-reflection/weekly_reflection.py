@@ -25,9 +25,9 @@ from vault_config import (  # noqa: E402
     vault_root,
     output_dir,
     content_link,
-    activity_log,
     owner_name,
 )
+from activity import append_activity  # noqa: E402
 
 from text_extractor import TextExtractor, WeeklyText
 from llm_synthesizer import ReflectionSynthesizer
@@ -101,10 +101,6 @@ class WeeklyReflectionOrchestrator:
             pass
 
     def _log(self, text: WeeklyText, reflection):
-        log = activity_log()
-        log.parent.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime("%Y-%m-%dT%H:%M")
-
         sources_used = []
         if text.journal_entries:
             sources_used.append("journal")
@@ -117,25 +113,18 @@ class WeeklyReflectionOrchestrator:
         if text.browser_titles:
             sources_used.append("browser")
 
-        entry = f"""## {ts}
-
-**Action:** Qualitative weekly reflection
-**Sources used:** {', '.join(sources_used)}
-**Outputs:**
-- [[{content_link(output_dir('reflections') / f'{self.review_date}-weekly-reflection.md')}]]
-**Stats:**
-- Journal entries: {len(text.journal_entries)}
-- Tasks: {len(text.tasks['created'])} created, {len(text.tasks['completed'])} completed
-- Emails: {len(text.emails['sent'])} sent, {len(text.emails['received'])} received
-- Notes modified: {len(text.notes)}
-- Themes generated: {len(reflection.themes)}
-- Reflection questions: {len(reflection.reflection_questions)}
-
----
-
-"""
-        with open(log, "a") as f:
-            f.write(entry)
+        log = append_activity("Qualitative weekly reflection", {
+            "Sources": ", ".join(sources_used),
+            "Outputs": [f"[[{content_link(output_dir('reflections') / f'{self.review_date}-weekly-reflection.md')}]]"],
+            "Stats": [
+                f"Journal entries: {len(text.journal_entries)}",
+                f"Tasks: {len(text.tasks['created'])} created, {len(text.tasks['completed'])} completed",
+                f"Emails: {len(text.emails['sent'])} sent, {len(text.emails['received'])} received",
+                f"Notes modified: {len(text.notes)}",
+                f"Themes generated: {len(reflection.themes)}",
+                f"Reflection questions: {len(reflection.reflection_questions)}",
+            ],
+        })
         print(f"✓ Logged to {log}")
 
 

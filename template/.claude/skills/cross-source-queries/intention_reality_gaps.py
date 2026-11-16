@@ -38,9 +38,9 @@ from vault_config import (  # noqa: E402
     source_enabled,
     output_dir,
     content_link,
-    activity_log,
     owner_name,
 )
+from activity import append_activity  # noqa: E402
 import okf  # noqa: E402
 
 try:
@@ -694,13 +694,8 @@ def generate_report() -> Optional[Path]:
     )
     print(f"Wrote {out}")
 
-    log = activity_log()
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as f:
-        f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
-        f.write("**Action:** Intention-reality gap analysis\n")
-        f.write(f"**Sources:** {', '.join(sources)}\n")
-        f.write(f"**Output:** [[{content_link(out)}]]\n\n---\n")
+    append_activity("Intention-reality gap analysis", {
+        "Sources": ", ".join(sources), "Outputs": [f"[[{content_link(out)}]]"]})
     return out
 
 

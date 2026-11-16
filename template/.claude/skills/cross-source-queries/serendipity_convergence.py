@@ -30,8 +30,8 @@ from vault_config import (  # noqa: E402
     browser_db_path,
     source_enabled,
     output_dir,
-    activity_log,
 )
+from activity import append_activity  # noqa: E402
 import okf  # noqa: E402
 
 
@@ -315,12 +315,7 @@ def generate_report() -> Optional[Path]:
     )
     print(f"Wrote {out}")
 
-    log = activity_log()
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as f:
-        f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
-        f.write(f"**Action:** Convergence analysis\n")
-        f.write(f"**Topics:** {len(topic_conv)}, **People:** {len(person_conv)}\n\n---\n")
+    append_activity("Convergence analysis", {"Topics": str(len(topic_conv)), "People": str(len(person_conv))})
     return out
 
 

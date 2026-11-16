@@ -27,9 +27,9 @@ from vault_config import (  # noqa: E402
     source_enabled,
     notes_vault_path,
     output_dir,
-    activity_log,
     owner_name,
 )
+from activity import append_activity  # noqa: E402
 import okf  # noqa: E402
 
 
@@ -177,12 +177,7 @@ def generate_report() -> Optional[Path]:
     )
     print(f"Wrote {out}")
 
-    log = activity_log()
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as f:
-        f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
-        f.write(f"**Action:** Commitment accountability scan\n")
-        f.write(f"**Commitments:** {report['total']}\n\n---\n")
+    append_activity("Commitment accountability scan", {"Commitments": str(report["total"])})
     return out
 
 

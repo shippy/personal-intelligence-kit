@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
+import activity
 import okf
 import commitment_accountability as mod
 
@@ -10,7 +11,7 @@ import commitment_accountability as mod
 def test_commitment_report_is_okf_conformant(tmp_path, monkeypatch):
     monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
     monkeypatch.setattr(mod, "source_enabled", lambda s: True)
-    monkeypatch.setattr(mod, "activity_log", lambda: tmp_path / "activity.md")
+    monkeypatch.setattr(activity, "activity_log", lambda when=None: tmp_path / "activity.md")
 
     class FakeAnalyzer:
         def analyze(self, days_back):
@@ -20,3 +21,4 @@ def test_commitment_report_is_okf_conformant(tmp_path, monkeypatch):
     path = mod.generate_report()
     assert okf.read_frontmatter(path)["type"] == "alert"
     assert (tmp_path / "log.md").exists()
+    assert "**Action:** Commitment accountability scan" in (tmp_path / "activity.md").read_text()

@@ -18,7 +18,8 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
-from vault_config import load_config, output_dir, activity_log  # noqa: E402
+from vault_config import load_config, output_dir  # noqa: E402
+from activity import append_activity  # noqa: E402
 import okf  # noqa: E402
 
 from draft_analyzer import DraftAnalyzer
@@ -254,14 +255,12 @@ class StaleDraftsOrchestrator:
             pass
 
     def _log_activity(self, finish_count, drop_count):
-        log = activity_log()
-        log.parent.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime("%Y-%m-%dT%H:%M")
-        with open(log, "a") as f:
-            f.write(f"\n## {ts}\n\n**Action:** Draft queue review\n"
-                    f"**Sources:** {', '.join(self.data_sources_used)}\n"
-                    f"**Finishable:** {finish_count}, **Drop:** {drop_count}\n"
-                    f"**LLM:** {'Yes' if self.llm_available else 'No'}\n\n---\n")
+        append_activity("Draft queue review", {
+            "Sources": ", ".join(self.data_sources_used),
+            "Finishable": str(finish_count),
+            "Drop": str(drop_count),
+            "LLM": "Yes" if self.llm_available else "No",
+        })
 
 
 def main():
