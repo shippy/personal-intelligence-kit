@@ -38,7 +38,7 @@ For each enabled source in `vault.toml`, runs the corresponding sync worker in p
 After all workers complete:
 1. Prints a summary (success/failure per worker, timing)
 2. Sends macOS notification via `terminal-notifier`
-3. Appends to `logs/activity.md`
+3. Appends one line for the run to `logs/sync.jsonl` (`job: "data-sync"`, per-source results in `stats.sources`)
 
 ## Scheduling
 

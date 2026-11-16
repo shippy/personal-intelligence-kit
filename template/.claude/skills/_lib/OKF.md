@@ -43,7 +43,7 @@ documents move. Broken links are tolerated by the spec.
   a slug, `* **Update**: <title>` thereafter. Do not edit by hand.
 
 > Note: `output/log.md` is the OKF bundle changelog. It is **separate** from the
-> operational `logs/activity.md`, which records skill-run activity and is not part
+> operational `logs/activity/` and `logs/sync.jsonl`, which record skill-run activity and are not part
 > of the bundle.
 
 ## Conformance checklist

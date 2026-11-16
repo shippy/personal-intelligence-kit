@@ -31,7 +31,7 @@ uv run import_tasks.py --full       # Full re-import
    - `created_at`, `completed_at`, `due_date`
    - `list_name` (or project name)
 3. Writes to `data/tasks.db`
-4. Logs sync activity
+4. Logs the run to `logs/sync.jsonl` (`job: "tasks-import"`)
 
 ## Output Schema
 

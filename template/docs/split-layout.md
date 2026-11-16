@@ -24,7 +24,7 @@ clone of the logic without any personal data, plus only the content folders you 
 - `output_root = "."` puts `reports/`, `alerts/`, `reflections/` … directly at the content root.
 - Without `state_root`, state stays in `data/` and launchd logs in `logs/` (single-dir behaviour).
 - Skill writers refuse any path inside the notes vault (`safe_write()`, `okf.write_concept()`,
-  `activity_log()`).
+  `activity_log()`, `sync_log()`).
 
 ## New instance
 

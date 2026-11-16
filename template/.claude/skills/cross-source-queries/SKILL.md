@@ -85,4 +85,4 @@ These extensions would add `pydantic-ai` and `anthropic` as dependencies and req
 All outputs follow the terse + dense pattern:
 - Terse alerts in `output/alerts/` (actionable findings)
 - Dense reports in `output/reports/` (full analysis)
-- Activity entries appended to `logs/activity.md`
+- Activity entries appended to `logs/activity/YYYY-MM.md`
