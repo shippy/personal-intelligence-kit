@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import tomllib
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
@@ -396,6 +397,27 @@ def logs_dir() -> Path:
     return expand(load_config().get("logs", {}).get("root", "logs"))
 
 
-def activity_log() -> Path:
-    """Activity log path (host-only). Raises if it is configured inside the notes vault."""
-    return assert_writable(expand(load_config().get("logs", {}).get("activity", "logs/activity.md")))
+def _logs_key(key: str, default: str) -> Path:
+    """A [logs] path, guarded: raises if it is configured inside the notes vault."""
+    return assert_writable(expand(load_config().get("logs", {}).get(key, default)))
+
+
+def activity_dir() -> Path:
+    """Directory of monthly activity logs (host-only)."""
+    return _logs_key("activity_dir", "logs/activity")
+
+
+def activity_log(when: Optional[datetime] = None) -> Path:
+    """Monthly activity log for `when` (default: now), e.g. logs/activity/2026-11.md."""
+    when = when or datetime.now()
+    return assert_writable(activity_dir() / f"{when:%Y-%m}.md")
+
+
+def legacy_activity_log() -> Path:
+    """The pre-split single activity log (the [logs] `activity` key), read by the migration."""
+    return _logs_key("activity", "logs/activity.md")
+
+
+def sync_log() -> Path:
+    """JSONL log of scheduled job runs."""
+    return _logs_key("sync", "logs/sync.jsonl")

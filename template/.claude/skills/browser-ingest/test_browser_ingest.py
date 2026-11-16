@@ -39,7 +39,7 @@ def test_ingest_writes_into_content_root_without_fixed_tmp_file(tmp_path, monkey
     out = content / "data" / "browser-history.db"
     with sqlite3.connect(out) as conn:
         assert conn.execute("SELECT count(*) FROM visits").fetchone()[0] == 1
-    assert (content / "logs" / "activity.md").exists()
+    assert any((content / "logs" / "activity").glob("*.md"))
     assert not (logic / "data").exists()
     assert copies and not copies[0].exists()  # temp copy cleaned up
     assert copies[0].parent.name.startswith("pik_browser_ingest_")
