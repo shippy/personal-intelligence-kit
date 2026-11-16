@@ -33,8 +33,8 @@ from vault_config import (  # noqa: E402
     journal_path,
     journal_type,
     journal_db_path,
-    activity_log,
 )
+from activity import log_sync  # noqa: E402
 
 
 INTENTION_RE = re.compile(
@@ -384,13 +384,8 @@ def main():
 
     print(f"Imported {imported} new entries (total: {total})")
 
-    log = activity_log()
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as f:
-        f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
-        f.write(f"**Action:** Journal ingest ({jtype})\n")
-        f.write(f"**New entries:** {imported}, **Total in DB:** {total}\n")
-        f.write(f"**Output:** `data/journal.db`\n\n---\n")
+    log_sync("journal-ingest", ok=True, stats={"type": jtype, "new": imported, "total": total},
+             outputs=[str(db_path)])
 
     return 0
 
