@@ -179,3 +179,46 @@ def test_failed_write_removes_partial_outputs(vault):
     assert _snapshot(vault) == before
     assert (vault / "logs" / "activity.md").exists()
     assert not list((vault / "logs" / "activity").glob("*.md"))
+
+
+def _no_temp_files(root: Path) -> bool:
+    return not [p for p in root.rglob("*.tmp")]
+
+
+def test_rollback_keeps_published_file_that_changed(vault, monkeypatch):
+    """A session appending to a freshly published month file must not lose its entry on rollback."""
+    real_link = mig.os.link
+    march = vault / "logs" / "activity" / "2026-03.md"
+
+    def link(src, dst, *a, **k):
+        if str(dst).endswith(".md") or str(dst).endswith(".jsonl"):
+            return real_link(src, dst, *a, **k)
+        with open(march, "a", encoding="utf-8") as f:  # concurrent host session
+            f.write("\n## 2026-03-31T12:00\n\n**Action:** concurrent\n\n---\n")
+        raise OSError("backup link failed")
+
+    monkeypatch.setattr(mig.os, "link", link)
+    assert mig.main(["--apply"]) == 1
+    assert "**Action:** concurrent" in march.read_text(encoding="utf-8")
+    assert not (vault / "logs" / "activity" / "2026-02.md").exists()
+    assert not (vault / "logs" / "sync.jsonl").exists()
+    assert (vault / "logs" / "activity.md").read_text(encoding="utf-8") == FIXTURE
+    assert _no_temp_files(vault)
+
+
+def test_backup_never_clobbers_raced_destination(vault, monkeypatch):
+    real_link = mig.os.link
+
+    def link(src, dst, *a, **k):
+        if ".pre-split-" in str(dst):
+            Path(dst).write_text("raced")
+        return real_link(src, dst, *a, **k)
+
+    monkeypatch.setattr(mig.os, "link", link)
+    assert mig.main(["--apply"]) == 1
+    backups = list((vault / "logs").glob("activity.md.pre-split-*"))
+    assert len(backups) == 1 and backups[0].read_text() == "raced"
+    assert (vault / "logs" / "activity.md").read_text(encoding="utf-8") == FIXTURE
+    assert not list((vault / "logs" / "activity").glob("*.md"))
+    assert not (vault / "logs" / "sync.jsonl").exists()
+    assert _no_temp_files(vault)

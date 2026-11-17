@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -212,24 +214,49 @@ def main(argv: list[str] | None = None) -> int:
         print("Refusing: move the existing targets aside first.", file=sys.stderr)
         return 2
 
-    created: list[Path] = []
+    # 1. Stage every output under a unique temp name next to its target and verify it.
+    # 2. Publish with os.link, which fails instead of overwriting an existing target.
+    # 3. Move the legacy file aside the same way (link to the backup name, then unlink).
+    # On any failure, staged temps are removed, and published targets are removed only if
+    # they still hold exactly what this run wrote (a concurrent session may have appended).
+    staged: dict[Path, Path] = {}
+    expected: dict[Path, str] = {}
+    published: list[Path] = []
+    backup_linked = False
     try:
         for path, text in files.items():
             target = assert_writable(path)
             target.parent.mkdir(parents=True, exist_ok=True)
-            with target.open("x", encoding="utf-8") as f:  # never overwrite
-                created.append(target)
+            fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+            staged[target] = assert_writable(tmp)
+            expected[target] = text
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
-        written = {p: p.read_text(encoding="utf-8") for p in files}
-        if _count_out(written, sync) != len(entries):
-            raise RuntimeError("written files don't hold every entry")
-        legacy.rename(assert_writable(renamed))
+        written = {p: staged[assert_writable(p)].read_text(encoding="utf-8") for p in files}
+        if _count_out(written, sync) != len(entries) or written != files:
+            raise RuntimeError("staged files don't hold every entry")
+        for target, tmp in staged.items():
+            os.link(tmp, target)  # FileExistsError if the target appeared meanwhile
+            published.append(target)
+        os.link(legacy, assert_writable(renamed))
+        backup_linked = True
+        legacy.unlink()
     except Exception as e:
-        # Remove only the files this run created, so a retry isn't blocked and no entry is live twice.
-        for path in created:
-            path.unlink(missing_ok=True)
-        print(f"Error: {e}. Removed this run's partial output; {legacy.name} left in place.", file=sys.stderr)
+        kept = []
+        if backup_linked and legacy.exists():
+            renamed.unlink(missing_ok=True)  # only our extra name for the still-live legacy file
+        for target in published:
+            if target.read_text(encoding="utf-8") == expected[target]:
+                target.unlink()
+            else:
+                kept.append(target)
+        print(f"Error: {e}. Removed this run's output; {legacy.name} left in place.", file=sys.stderr)
+        for target in kept:
+            print(f"kept {target}: it changed after publishing (new entries were appended)", file=sys.stderr)
         return 1
+    finally:
+        for tmp in staged.values():
+            tmp.unlink(missing_ok=True)
     print(f"Wrote {len(files)} file(s); renamed {legacy.name} → {renamed.name}")
     return 0
 
