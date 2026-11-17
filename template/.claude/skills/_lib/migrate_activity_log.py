@@ -212,16 +212,24 @@ def main(argv: list[str] | None = None) -> int:
         print("Refusing: move the existing targets aside first.", file=sys.stderr)
         return 2
 
-    for path, text in files.items():
-        target = assert_writable(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("x", encoding="utf-8") as f:  # never overwrite
-            f.write(text)
-    written = {p: p.read_text(encoding="utf-8") for p in files}
-    if _count_out(written, sync) != len(entries):
-        print("Error: written files don't hold every entry; old file left in place.", file=sys.stderr)
+    created: list[Path] = []
+    try:
+        for path, text in files.items():
+            target = assert_writable(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("x", encoding="utf-8") as f:  # never overwrite
+                created.append(target)
+                f.write(text)
+        written = {p: p.read_text(encoding="utf-8") for p in files}
+        if _count_out(written, sync) != len(entries):
+            raise RuntimeError("written files don't hold every entry")
+        legacy.rename(assert_writable(renamed))
+    except Exception as e:
+        # Remove only the files this run created, so a retry isn't blocked and no entry is live twice.
+        for path in created:
+            path.unlink(missing_ok=True)
+        print(f"Error: {e}. Removed this run's partial output; {legacy.name} left in place.", file=sys.stderr)
         return 1
-    legacy.rename(assert_writable(renamed))
     print(f"Wrote {len(files)} file(s); renamed {legacy.name} → {renamed.name}")
     return 0
 

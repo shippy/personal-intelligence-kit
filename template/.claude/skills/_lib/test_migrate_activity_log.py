@@ -167,3 +167,15 @@ def test_apply_refuses_targets_in_notes(vault, tmp_path):
     assert mig.main(["--apply"]) == 2
     assert list((tmp_path / "Notes").iterdir()) == []
     assert (vault / "logs" / "activity.md").exists()
+
+
+def test_failed_write_removes_partial_outputs(vault):
+    toml = vault / "vault.toml"
+    toml.write_text(toml.read_text() + '\n[logs]\nsync = "logs/blocker/sync.jsonl"\n')
+    (vault / "logs" / "blocker").write_text("not a directory")
+    vc.clear_cache()
+    before = _snapshot(vault)
+    assert mig.main(["--apply"]) == 1
+    assert _snapshot(vault) == before
+    assert (vault / "logs" / "activity.md").exists()
+    assert not list((vault / "logs" / "activity").glob("*.md"))
