@@ -217,10 +217,10 @@ def main(argv: list[str] | None = None) -> int:
     # 1. Stage every output under a unique temp name next to its target and verify it.
     # 2. Publish with os.link, which fails instead of overwriting an existing target.
     # 3. Move the legacy file aside the same way (link to the backup name, then unlink).
-    # On any failure, staged temps are removed, and published targets are removed only if
-    # they still hold exactly what this run wrote (a concurrent session may have appended).
+    # On any failure only this run's staged temps are removed. Published targets are never
+    # deleted or modified (a host session may already be appending to them); they are listed
+    # for the person to reconcile by hand.
     staged: dict[Path, Path] = {}
-    expected: dict[Path, str] = {}
     published: list[Path] = []
     backup_linked = False
     try:
@@ -229,7 +229,6 @@ def main(argv: list[str] | None = None) -> int:
             target.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
             staged[target] = assert_writable(tmp)
-            expected[target] = text
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
         written = {p: staged[assert_writable(p)].read_text(encoding="utf-8") for p in files}
@@ -242,17 +241,14 @@ def main(argv: list[str] | None = None) -> int:
         backup_linked = True
         legacy.unlink()
     except Exception as e:
-        kept = []
         if backup_linked and legacy.exists():
             renamed.unlink(missing_ok=True)  # only our extra name for the still-live legacy file
-        for target in published:
-            if target.read_text(encoding="utf-8") == expected[target]:
-                target.unlink()
-            else:
-                kept.append(target)
-        print(f"Error: {e}. Removed this run's output; {legacy.name} left in place.", file=sys.stderr)
-        for target in kept:
-            print(f"kept {target}: it changed after publishing (new entries were appended)", file=sys.stderr)
+        print(f"Error: {e}. {legacy.name} left in place.", file=sys.stderr)
+        if published:
+            print("These files were already published and were left untouched; reconcile them by hand"
+                  f" against {legacy} (move them aside before re-running --apply):", file=sys.stderr)
+            for target in published:
+                print(f"  {target}", file=sys.stderr)
         return 1
     finally:
         for tmp in staged.values():

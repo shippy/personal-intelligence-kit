@@ -185,7 +185,7 @@ def _no_temp_files(root: Path) -> bool:
     return not [p for p in root.rglob("*.tmp")]
 
 
-def test_rollback_keeps_published_file_that_changed(vault, monkeypatch):
+def test_failure_leaves_published_outputs_and_lists_them(vault, monkeypatch, capsys):
     """A session appending to a freshly published month file must not lose its entry on rollback."""
     real_link = mig.os.link
     march = vault / "logs" / "activity" / "2026-03.md"
@@ -200,13 +200,15 @@ def test_rollback_keeps_published_file_that_changed(vault, monkeypatch):
     monkeypatch.setattr(mig.os, "link", link)
     assert mig.main(["--apply"]) == 1
     assert "**Action:** concurrent" in march.read_text(encoding="utf-8")
-    assert not (vault / "logs" / "activity" / "2026-02.md").exists()
-    assert not (vault / "logs" / "sync.jsonl").exists()
+    # Published outputs are never deleted on failure; they're listed for manual reconciliation.
+    err = capsys.readouterr().err
+    for p in [vault / "logs" / "activity" / "2026-02.md", march, vault / "logs" / "sync.jsonl"]:
+        assert p.exists() and str(p) in err
     assert (vault / "logs" / "activity.md").read_text(encoding="utf-8") == FIXTURE
     assert _no_temp_files(vault)
 
 
-def test_backup_never_clobbers_raced_destination(vault, monkeypatch):
+def test_backup_never_clobbers_raced_destination(vault, monkeypatch, capsys):
     real_link = mig.os.link
 
     def link(src, dst, *a, **k):
@@ -219,6 +221,8 @@ def test_backup_never_clobbers_raced_destination(vault, monkeypatch):
     backups = list((vault / "logs").glob("activity.md.pre-split-*"))
     assert len(backups) == 1 and backups[0].read_text() == "raced"
     assert (vault / "logs" / "activity.md").read_text(encoding="utf-8") == FIXTURE
-    assert not list((vault / "logs" / "activity").glob("*.md"))
-    assert not (vault / "logs" / "sync.jsonl").exists()
+    err = capsys.readouterr().err
+    for name in ("2026-02.md", "2026-03.md", "unsorted.md"):
+        assert (vault / "logs" / "activity" / name).exists()
+        assert str(vault / "logs" / "activity" / name) in err
     assert _no_temp_files(vault)
