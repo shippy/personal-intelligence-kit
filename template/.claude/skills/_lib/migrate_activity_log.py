@@ -222,7 +222,6 @@ def main(argv: list[str] | None = None) -> int:
     # for the person to reconcile by hand.
     staged: dict[Path, Path] = {}
     published: list[Path] = []
-    backup_linked = False
     try:
         for path, text in files.items():
             target = assert_writable(path)
@@ -238,11 +237,9 @@ def main(argv: list[str] | None = None) -> int:
             os.link(tmp, target)  # FileExistsError if the target appeared meanwhile
             published.append(target)
         os.link(legacy, assert_writable(renamed))
-        backup_linked = True
+        published.append(renamed)
         legacy.unlink()
     except Exception as e:
-        if backup_linked and legacy.exists():
-            renamed.unlink(missing_ok=True)  # only our extra name for the still-live legacy file
         print(f"Error: {e}. {legacy.name} left in place.", file=sys.stderr)
         if published:
             print("These files were already published and were left untouched; reconcile them by hand"

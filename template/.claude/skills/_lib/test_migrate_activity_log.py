@@ -226,3 +226,21 @@ def test_backup_never_clobbers_raced_destination(vault, monkeypatch, capsys):
         assert (vault / "logs" / "activity" / name).exists()
         assert str(vault / "logs" / "activity" / name) in err
     assert _no_temp_files(vault)
+
+
+def test_failed_legacy_unlink_leaves_backup_and_lists_it(vault, monkeypatch, capsys):
+    legacy = vault / "logs" / "activity.md"
+    real_unlink = Path.unlink
+
+    def unlink(self, *a, **k):
+        if self == legacy:
+            raise OSError("unlink failed")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    assert mig.main(["--apply"]) == 1
+    backups = list((vault / "logs").glob("activity.md.pre-split-*"))
+    assert len(backups) == 1 and backups[0].read_text(encoding="utf-8") == FIXTURE
+    assert legacy.read_text(encoding="utf-8") == FIXTURE
+    assert str(backups[0]) in capsys.readouterr().err
+    assert _no_temp_files(vault)
