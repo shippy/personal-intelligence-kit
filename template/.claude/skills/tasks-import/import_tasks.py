@@ -150,22 +150,27 @@ _MS_SCOPE = "Tasks.Read"
 
 
 _MS_AUTH_RECORD = "ms_auth_record.json"
+_MS_CACHE_NAME = "pik-todo"
 
 
-def _ms_auth_record_path() -> Path:
+class MsAuthRequired(RuntimeError):
+    """No usable auth record, and interactive sign-in was not allowed."""
+
+
+def _ms_auth_record_path(record_name: str = _MS_AUTH_RECORD) -> Path:
     """Path to the persisted Azure authentication record (host-only state)."""
-    return assert_writable(state_dir() / _MS_AUTH_RECORD)  # the file may be a symlink
+    return assert_writable(state_dir() / record_name)  # the file may be a symlink
 
 
-def _load_ms_auth_record_text() -> str | None:
+def _load_ms_auth_record_text(record_name: str = _MS_AUTH_RECORD) -> str | None:
     """Read the auth record, migrating it once from data/ (pre-v0.8.0 location).
 
     The old file is left in place; remove it by hand once the new one works.
     """
-    record_path = _ms_auth_record_path()
+    record_path = _ms_auth_record_path(record_name)
     if record_path.exists():
         return record_path.read_text()
-    legacy = data_dir() / _MS_AUTH_RECORD
+    legacy = data_dir() / record_name
     if legacy != record_path and legacy.exists():
         text = legacy.read_text()
         record_path.parent.mkdir(parents=True, exist_ok=True)
@@ -175,11 +180,19 @@ def _load_ms_auth_record_text() -> str | None:
     return None
 
 
-def _get_ms_credential():
+def _get_ms_credential(
+    *,
+    scope: str = _MS_SCOPE,
+    cache_name: str = _MS_CACHE_NAME,
+    record_name: str = _MS_AUTH_RECORD,
+    interactive: bool = True,
+):
     """Build a DeviceCodeCredential with persistent token cache.
 
     First run triggers interactive device-code flow (browser sign-in).
-    Subsequent runs re-use the cached token silently.
+    Subsequent runs re-use the cached token silently. With interactive=False,
+    a missing record raises MsAuthRequired and an expired session raises
+    instead of prompting.
     """
     from azure.identity import (
         AuthenticationRecord,
@@ -187,31 +200,36 @@ def _get_ms_credential():
         TokenCachePersistenceOptions,
     )
 
-    cache_options = TokenCachePersistenceOptions(name="pik-todo")
+    cache_options = TokenCachePersistenceOptions(name=cache_name)
 
     auth_record = None
-    record_path = _ms_auth_record_path()
-    record_text = _load_ms_auth_record_text()
+    record_path = _ms_auth_record_path(record_name)
+    record_text = _load_ms_auth_record_text(record_name)
     if record_text is not None:
         try:
             auth_record = AuthenticationRecord.deserialize(record_text)
         except Exception as exc:
             print(f"Warning: could not load auth record: {exc}")
 
+    if auth_record is None and not interactive:
+        raise MsAuthRequired(f"No usable auth record at {record_path}")
+
     def _prompt(uri, code, expires_in):
         print(f"\n  Visit {uri} and enter code: {code}  (expires in {expires_in}s)\n")
 
+    kwargs = {} if interactive else {"disable_automatic_authentication": True}
     credential = DeviceCodeCredential(
         client_id=_MS_CLIENT_ID,
         tenant_id="common",
         prompt_callback=_prompt,
         cache_persistence_options=cache_options,
         authentication_record=auth_record,
+        **kwargs,
     )
 
     if auth_record is None:
         print("First-time authentication — follow the prompt above...")
-        new_record = credential.authenticate(scopes=[_MS_SCOPE])
+        new_record = credential.authenticate(scopes=[scope])
         record_path.parent.mkdir(parents=True, exist_ok=True)
         record_path.write_text(new_record.serialize())
         print(f"Auth record saved to {record_path}")
@@ -219,7 +237,7 @@ def _get_ms_credential():
     return credential
 
 
-def _ms_graph_get(credential, endpoint: str, *, retries: int = 3) -> dict:
+def _ms_graph_get(credential, endpoint: str, *, retries: int = 3, scope: str = _MS_SCOPE) -> dict:
     """Make an authenticated GET to the Graph API with retry on 429/503."""
     if endpoint.startswith(_MS_GRAPH_BASE + "/"):
         url = endpoint
@@ -231,7 +249,7 @@ def _ms_graph_get(credential, endpoint: str, *, retries: int = 3) -> dict:
     import httpx
     import time
 
-    token = credential.get_token(_MS_SCOPE)
+    token = credential.get_token(scope)
     headers = {"Authorization": f"Bearer {token.token}"}
 
     delay = 1.0
@@ -247,7 +265,7 @@ def _ms_graph_get(credential, endpoint: str, *, retries: int = 3) -> dict:
                 time.sleep(wait)
                 delay *= 2
                 # Refresh token in case it expired during wait
-                token = credential.get_token(_MS_SCOPE)
+                token = credential.get_token(scope)
                 headers = {"Authorization": f"Bearer {token.token}"}
                 continue
             resp.raise_for_status()
@@ -257,7 +275,37 @@ def _ms_graph_get(credential, endpoint: str, *, retries: int = 3) -> dict:
     raise RuntimeError("Graph API request failed after retries")
 
 
-def _ms_graph_collection(credential, endpoint: str) -> list[dict]:
+def _ms_graph_post(credential, endpoint: str, payload: dict, *, scope: str, retries: int = 3) -> dict:
+    """Authenticated POST to the Graph API.
+
+    Never retries a request the server may have processed: only a 429 or 503
+    that carries a numeric Retry-After is retried.
+    """
+    if not endpoint.startswith("/"):
+        raise ValueError("Graph POST endpoint must be a path under the Graph API base")
+    url = f"{_MS_GRAPH_BASE}{endpoint}"
+
+    import httpx
+    import time
+
+    for attempt in range(retries):
+        token = credential.get_token(scope)
+        resp = httpx.post(
+            url, headers={"Authorization": f"Bearer {token.token}"}, json=payload, timeout=30.0
+        )
+        retry_after = resp.headers.get("Retry-After")
+        if (resp.status_code in (429, 503) and retry_after and retry_after.isdigit()
+                and attempt < retries - 1):
+            print(f"  Rate limited ({resp.status_code}), retrying in {retry_after}s...")
+            time.sleep(int(retry_after))
+            continue
+        resp.raise_for_status()
+        return resp.json()
+
+    raise RuntimeError("Graph API request failed after retries")
+
+
+def _ms_graph_collection(credential, endpoint: str, **get_kwargs) -> list[dict]:
     """Fetch every page, rejecting incomplete responses before reconciliation."""
     items = []
     visited = set()
@@ -265,7 +313,7 @@ def _ms_graph_collection(credential, endpoint: str) -> list[dict]:
         if endpoint in visited:
             raise ValueError("Graph pagination repeated a page")
         visited.add(endpoint)
-        page = _ms_graph_get(credential, endpoint)
+        page = _ms_graph_get(credential, endpoint, **get_kwargs)
         if not isinstance(page.get("value"), list):
             raise ValueError("Graph collection response is missing its value list")
         items.extend(page["value"])

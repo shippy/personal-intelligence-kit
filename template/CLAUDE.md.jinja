@@ -329,7 +329,7 @@ Detailed workflows live in `.claude/skills/*/SKILL.md`. Each skill is loaded on-
 - `journal-ingest` — Parse journal exports
 {% endif -%}
 {% if enable_tasks -%}
-- `tasks-import` — Sync task manager
+- `tasks-import` — Sync task manager{% if task_provider == 'microsoft-todo' %}; can also create To Do tasks on request (`add_tasks.py`, always previewed first){% endif %}
 {% endif %}
 
 **Architecture:**
