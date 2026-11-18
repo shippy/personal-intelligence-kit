@@ -57,7 +57,7 @@ my-vault/
 ├── output/                # All AI-generated deliverables land here
 ├── data/                  # Normalized SQLite databases
 ├── config/                # launchd / cron templates for scheduled runs
-└── logs/activity.md       # Append-only audit trail
+└── logs/                  # activity/YYYY-MM.md (sessions) + sync.jsonl (job runs)
 ```
 
 Skills read `vault.toml` and skip disabled sources gracefully. Enable what you use, ignore the rest.
@@ -131,6 +131,11 @@ copier update --vcs-ref=v0.8.0
 ```
 
 This re-renders templates and merges changes. Your `output/`, `data/`, `logs/`, and `.env` are preserved across updates.
+
+**Upgrading from a single `activity.md`:** run `uv run .claude/skills/_lib/migrate_activity_log.py` (dry run), then
+`--apply` while no scheduled job is running. It splits `logs/activity.md` into `logs/activity/YYYY-MM.md` and
+`logs/sync.jsonl`, refuses if any target file already exists, and renames the old file to
+`activity.md.pre-split-YYYYMMDD` (never deletes it).
 
 ## Development checks
 

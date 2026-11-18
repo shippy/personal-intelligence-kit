@@ -1,6 +1,7 @@
 """browser-ingest writes to the configured data dir and uses a private temp copy."""
 
 import importlib.util
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -39,7 +40,10 @@ def test_ingest_writes_into_content_root_without_fixed_tmp_file(tmp_path, monkey
     out = content / "data" / "browser-history.db"
     with sqlite3.connect(out) as conn:
         assert conn.execute("SELECT count(*) FROM visits").fetchone()[0] == 1
-    assert (content / "logs" / "activity.md").exists()
+    sync = content / "logs" / "sync.jsonl"
+    assert sync.exists()
+    assert json.loads(sync.read_text().splitlines()[-1])["job"] == "browser-ingest"
+    assert not (content / "logs" / "activity").exists()
     assert not (logic / "data").exists()
     assert copies and not copies[0].exists()  # temp copy cleaned up
     assert copies[0].parent.name.startswith("pik_browser_ingest_")

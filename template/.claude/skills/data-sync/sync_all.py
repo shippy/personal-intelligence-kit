@@ -23,7 +23,6 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent
@@ -32,9 +31,9 @@ from vault_config import (  # noqa: E402
     load_config,
     source_enabled,
     email_path,
-    activity_log,
     owner_name,
 )
+from activity import log_sync  # noqa: E402
 
 
 @dataclass
@@ -189,18 +188,9 @@ def main():
     notify("Data Sync Complete" if all_ok else "Data Sync: errors", summary, all_ok)
 
     # Log
-    log = activity_log()
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as f:
-        f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
-        f.write("**Action:** Data sync\n")
-        f.write(f"**Sources:** {', '.join(r.name for r in results)}\n")
-        f.write(f"**Duration:** {total:.1f}s\n")
-        f.write("**Results:**\n")
-        for r in results:
-            icon = "✓" if r.success else "✗"
-            f.write(f"- {icon} {r.name} ({r.duration:.1f}s): {r.message}\n")
-        f.write("\n---\n")
+    log_sync("data-sync", ok=all_ok, duration_s=total, message=summary, stats={"sources": {
+        r.name: {"ok": r.success, "duration_s": round(r.duration, 3), "message": r.message} for r in results
+    }})
 
     sys.exit(0 if all_ok else 1)
 

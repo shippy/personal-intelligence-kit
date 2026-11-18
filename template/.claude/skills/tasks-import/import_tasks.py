@@ -33,8 +33,8 @@ from vault_config import (  # noqa: E402
     tasks_db_path,
     data_dir,
     state_dir,
-    activity_log,
 )
+from activity import log_sync  # noqa: E402
 
 
 SCHEMA = """
@@ -436,13 +436,8 @@ def main():
     count = PROVIDERS[provider](args.full)
     print(f"Imported/updated {count} tasks")
 
-    log = activity_log()
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as f:
-        f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
-        f.write(f"**Action:** Tasks import ({provider})\n")
-        f.write(f"**Imported/updated:** {count}\n")
-        f.write(f"**Output:** `data/tasks.db`\n\n---\n")
+    log_sync("tasks-import", ok=True, stats={"provider": provider, "imported_updated": count},
+             outputs=[str(tasks_db_path())])
 
     return 0
 

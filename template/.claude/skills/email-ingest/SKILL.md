@@ -21,7 +21,7 @@ Or called automatically by `data-sync`.
 1. Runs `mbsync -a` to sync all configured IMAP accounts
 2. Runs `notmuch new` to index new messages into the notmuch database
 3. Reports counts of new/updated messages
-4. Logs activity to `logs/activity.md`
+4. Its run is logged by data-sync to `logs/sync.jsonl`
 
 ## Prerequisites
 

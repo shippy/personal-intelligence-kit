@@ -61,6 +61,8 @@ def test_single_dir_vault_toml_keeps_v070_paths(single):
         "drafts_for_review": "output/drafts-for-review",
     }
     assert cfg["logs"]["activity"] == "logs/activity.md"
+    assert cfg["logs"]["activity_dir"] == "logs/activity"
+    assert cfg["logs"]["sync"] == "logs/sync.jsonl"
 
 
 def test_single_dir_daily_sync_is_secret_free_and_logs_in_vault(single):

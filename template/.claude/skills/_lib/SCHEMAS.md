@@ -273,6 +273,31 @@ Analysis skills should:
 
 ---
 
+## `logs/sync.jsonl` — Job Runs
+
+Written by `log_sync()` in `_lib/activity.py`, one JSON object per line (UTF-8, `ensure_ascii=False`),
+appended once per scheduled job run. Session and analysis work goes to `logs/activity/YYYY-MM.md`
+via `append_activity()` instead.
+
+| Key | Type | Notes |
+|-----|------|-------|
+| `ts` | string | Local ISO 8601 with offset and seconds, e.g. `2026-11-16T03:00:12+01:00` |
+| `job` | string | `data-sync`, `journal-ingest`, `browser-ingest`, `git-stats`, `tasks-import` |
+| `ok` | bool \| null | `null` on migrated legacy lines |
+| `duration_s` | float \| null | Wall time of the run |
+| `stats` | object | Job-specific counts (data-sync: `{"sources": {name: {ok, duration_s, message}}}`) |
+| `outputs` | array of string | Paths written (e.g. the DB) |
+| `message` | string \| null | Summary or error text |
+
+Lines migrated from the old `activity.md` add `"legacy": true`, `"raw"` (the original entry body) and
+`"heading"` (the original heading), and have `ts` without seconds or offset.
+
+```bash
+jq -c 'select(.ok == false)' logs/sync.jsonl      # failed runs
+```
+
+---
+
 ## Extension Guide
 
 To add a new data source:

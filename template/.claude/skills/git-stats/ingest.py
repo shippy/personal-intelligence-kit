@@ -36,8 +36,8 @@ from vault_config import (  # noqa: E402
     git_scopes,
     git_commits_db_path,
     expand,
-    activity_log,
 )
+from activity import log_sync  # noqa: E402
 
 FIELD_SEP = "\x00"
 # git log format: hash, author name, author email, ISO date, subject, decorations, co-author trailers
@@ -324,14 +324,8 @@ def main() -> int:
     print(f"\nOutput: {db_path}")
 
     # Activity log
-    log = activity_log()
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as f:
-        f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
-        f.write(f"**Action:** Git commit stats ingest ({date_range})\n")
-        f.write(f"**Repos:** {total_repos}, **Commits:** {total_commits}, ")
-        f.write(f"**Co-authored:** {total_co_authored}\n")
-        f.write(f"**Output:** `data/git-commits.db`\n\n---\n")
+    log_sync("git-stats", ok=True, outputs=[str(db_path)], stats={
+        "range": date_range, "repos": total_repos, "commits": total_commits, "co_authored": total_co_authored})
 
     return 0
 

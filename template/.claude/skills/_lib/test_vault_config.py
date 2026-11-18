@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -132,7 +133,7 @@ def test_v070_toml_reproduces_single_dir_paths(tmp_path, monkeypatch):
     assert vc.output_dir("reports") == r / "output" / "reports"
     assert vc.output_dir("unknown") == r / "output" / "unknown"
     assert vc.logs_dir() == r / "logs"
-    assert vc.activity_log() == r / "logs" / "activity.md"
+    assert vc.activity_log(datetime(2026, 11, 30, 23, 59)) == r / "logs" / "activity" / "2026-11.md"
     assert vc.working_dir() == r / "working"
     assert vc.notes_vault_path() == notes.resolve()
     assert vc.drafts_path() == (notes / "Drafts").resolve()
@@ -175,7 +176,7 @@ reflections = "reflections"
     assert vc.output_dir("reflections") == c / "reflections"
     assert vc.output_dir("alerts") == c / "alerts"
     assert vc.inbox_dir() == c / "inbox"
-    assert vc.activity_log() == c / "logs" / "activity.md"
+    assert vc.activity_log(datetime(2026, 11, 30, 23, 59)) == c / "logs" / "activity" / "2026-11.md"
     assert vc.notes_vault_path() == (tmp_path / "Notes").resolve()
 
 
@@ -217,8 +218,44 @@ def test_guard_allows_content_paths_and_sibling_prefixes(tmp_path, monkeypatch):
 def test_activity_log_inside_notes_is_refused(tmp_path, monkeypatch):
     notes = _guarded(tmp_path, monkeypatch, f'[logs]\nactivity = "{tmp_path}/Notes/activity.md"\n')
     with pytest.raises(vc.VaultConfigError):
-        vc.activity_log()
+        vc.legacy_activity_log()
     assert not (notes / "activity.md").exists()
+
+
+@pytest.mark.parametrize("key, fn", [
+    ("activity_dir", lambda: vc.activity_dir()),
+    ("activity_dir", lambda: vc.activity_log()),
+    ("sync", lambda: vc.sync_log()),
+])
+def test_new_log_paths_inside_notes_are_refused(tmp_path, monkeypatch, key, fn):
+    _guarded(tmp_path, monkeypatch, f'[logs]\n{key} = "{tmp_path}/Notes/logs-x"\n')
+    with pytest.raises(vc.VaultConfigError):
+        fn()
+
+
+def test_activity_log_is_monthly(tmp_path, monkeypatch):
+    root = tmp_path / "vault"
+    _write(root, V070_TOML.format(notes=tmp_path / "Notes"))
+    monkeypatch.setenv(vc.ENV_VAR, str(root))
+    r = root.resolve()
+    assert vc.activity_log(datetime(2026, 11, 30, 23, 59)) == r / "logs" / "activity" / "2026-11.md"
+    assert vc.activity_log().name == f"{datetime.now():%Y-%m}.md"
+
+
+def test_logs_defaults_without_new_keys(tmp_path, monkeypatch):
+    root = tmp_path / "vault"
+    _write(root, '[logs]\nactivity = "logs/activity.md"\n')
+    monkeypatch.setenv(vc.ENV_VAR, str(root))
+    r = root.resolve()
+    assert vc.sync_log() == r / "logs" / "sync.jsonl"
+    assert vc.activity_dir() == r / "logs" / "activity"
+
+
+def test_legacy_activity_log(tmp_path, monkeypatch):
+    root = tmp_path / "vault"
+    _write(root, V070_TOML.format(notes=tmp_path / "Notes"))
+    monkeypatch.setenv(vc.ENV_VAR, str(root))
+    assert vc.legacy_activity_log() == root.resolve() / "logs" / "activity.md"
 
 
 def test_write_concept_refuses_notes_out_dir(tmp_path, monkeypatch):

@@ -38,5 +38,9 @@ from .vault_config import (  # noqa: F401
     output_dir,
     content_link,
     logs_dir,
+    activity_dir,
     activity_log,
+    legacy_activity_log,
+    sync_log,
 )
+from .activity import append_activity, log_sync  # noqa: F401,E402

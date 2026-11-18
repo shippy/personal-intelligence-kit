@@ -26,7 +26,7 @@ PKM mode, or in a private task draft in project mode, never in PARA.
 ## Destinations and output conventions
 
 PKM: write deliverables in output, investigations in working, and append significant
-activity to logs/activity.md. Project: write project artifacts in the workspace;
+activity to logs/activity/YYYY-MM.md. Project: write project artifacts in the workspace;
 the AI vault is reference-only. Do not impose OKF on code, slides or resume JSON.
 The upstream knowledge-output target is OKF v0.1. Local data still has legacy
 wikilinks/frontmatter; preserve it. New knowledge documents need nonempty type;
@@ -34,7 +34,7 @@ title, description, timestamp and tags are recommended. Preserve unknown keys.
 Use the upstream okf.write_concept helper if installed; otherwise use local output
 conventions and disclose the missing helper instead of claiming conformance.
 Root index.md may declare okf_version; nested indexes have no frontmatter.
-output/log.md is a bundle changelog, separate from operational logs/activity.md.
+output/log.md is a bundle changelog, separate from operational logs/activity/.
 
 ## Boundaries and capabilities
 

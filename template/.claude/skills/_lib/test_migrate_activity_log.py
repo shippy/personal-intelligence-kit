@@ -1,0 +1,246 @@
+import json
+import sys
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import migrate_activity_log as mig
+import vault_config as vc
+
+FIXTURE = """# Activity Log
+stray preamble line
+
+## 2026-03-01T10:00:00
+
+**Action:** Morning planning
+**Sources:** journal
+
+---
+
+## 2026-03-01T (later)
+
+**Action:** Follow-up review
+
+---
+
+## 2026-02-16T15:10
+
+**Action:** Older session placed late
+
+---
+
+## garbage
+
+**Action:** Unknown date entry
+
+---
+
+## 2026-03-02T05:00
+
+**Action:** Data sync
+**Results:**
+- ✓ journal (1.0s): ok
+
+---
+
+## 2026-03-03T09:00
+
+**Action:** Přehled týdne — žluťoučký kůň
+
+---
+
+## 2026-03-04T08:00+01:00
+
+**Action:** Last entry without separator
+"""
+
+
+@pytest.fixture
+def vault(tmp_path, monkeypatch):
+    root = tmp_path / "vault"
+    notes = tmp_path / "Notes"
+    notes.mkdir()
+    root.mkdir()
+    (root / "vault.toml").write_text(f'[notes]\napp = "obsidian"\nvault_path = "{notes}"\n')
+    (root / "logs").mkdir()
+    (root / "logs" / "activity.md").write_text(FIXTURE, encoding="utf-8")
+    monkeypatch.setenv(vc.ENV_VAR, str(root))
+    vc.clear_cache()
+    yield root.resolve()
+    vc.clear_cache()
+
+
+def _snapshot(root: Path) -> dict:
+    return {str(p.relative_to(root)): (p.stat().st_mtime_ns, p.read_bytes())
+            for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def test_parse_counts():
+    preamble, entries = mig.parse_entries(FIXTURE)
+    assert len(entries) == 7
+    assert "stray preamble line" in preamble
+    later = entries[1]
+    assert later.date == date(2026, 3, 1) and later.time is None and later.suffix == "(later)"
+    assert entries[0].time == "10:00"
+    assert entries[3].date is None
+    assert entries[4].action == "Data sync"
+    assert not entries[-1].body.endswith("---")
+    assert "\n---" not in entries[0].body
+
+
+def test_plan_split_routes():
+    split = mig.plan_split(*mig.parse_entries(FIXTURE))
+    assert len(split.sync_lines) == 1
+    line = split.sync_lines[0]
+    assert line["job"] == "data-sync" and line["legacy"] is True and line["ok"] is None
+    assert line["ts"] == "2026-03-02T05:00"
+    assert "✓ journal" in line["raw"]
+    assert len(split.unsorted) == 1 and "garbage" in split.unsorted[0]
+    assert list(split.months) == ["2026-02", "2026-03"]
+    assert sum(len(v) for v in split.months.values()) == 5
+
+
+def test_order_within_date_preserved():
+    split = mig.plan_split(*mig.parse_entries(FIXTURE))
+    march = "".join(split.months["2026-03"])
+    assert march.index("## 2026-03-01T10:00\n") < march.index("## 2026-03-01\n")
+    later = split.months["2026-03"][1]
+    assert later.startswith("\n## 2026-03-01\n\n**Time:** (later)\n")
+    # February entry sorts before March ones despite appearing later in the file.
+    assert "Older session placed late" in split.months["2026-02"][0]
+    assert split.fixed_headings >= 3
+
+
+def test_job_prefixes():
+    assert mig.JOB_ACTIONS["To-Do sync"] == "tasks-import"
+    assert mig.job_slug("Journal ingest (rosebud)") == "journal-ingest"
+    assert mig.job_slug("Weekly review") is None
+
+
+def test_dry_run_writes_nothing(vault, capsys):
+    before = _snapshot(vault)
+    assert mig.main([]) == 0
+    assert _snapshot(vault) == before
+    out = capsys.readouterr().out
+    assert "2026-03: 4" in out and "jobs: 1" in out and "unsorted: 1" in out
+
+
+def test_apply_roundtrip(vault):
+    assert mig.main(["--apply"]) == 0
+    logs = vault / "logs"
+    assert not (logs / "activity.md").exists()
+    assert len(list(logs.glob("activity.md.pre-split-*"))) == 1
+    month_text = "".join((logs / "activity" / f"{m}.md").read_text(encoding="utf-8") for m in ("2026-02", "2026-03"))
+    unsorted = (logs / "activity" / "unsorted.md").read_text(encoding="utf-8")
+    sync_lines = [json.loads(line) for line in (logs / "sync.jsonl").read_text(encoding="utf-8").splitlines()]
+    everything = month_text + unsorted + "".join(s["raw"] for s in sync_lines)
+    _, entries = mig.parse_entries(FIXTURE)
+    for e in entries:
+        assert everything.count(e.body) == 1, e.body
+    assert "Přehled týdne — žluťoučký kůň" in month_text
+    assert "stray preamble line" in (logs / "activity" / "2026-02.md").read_text(encoding="utf-8")
+    assert (logs / "activity" / "2026-03.md").read_text(encoding="utf-8").startswith("# Activity — 2026-03\n")
+    assert month_text.count("\n## ") + unsorted.count("\n## ") + len(sync_lines) == 7
+
+
+def test_apply_twice_refuses(vault):
+    assert mig.main(["--apply"]) == 0
+    before = _snapshot(vault)
+    assert mig.main(["--apply"]) == 2
+    assert _snapshot(vault) == before
+
+
+def test_apply_refuses_when_targets_hold_entries(vault):
+    sync = vault / "logs" / "sync.jsonl"
+    sync.write_text('{"job": "x"}\n')
+    before = _snapshot(vault)
+    assert mig.main(["--apply"]) == 2
+    assert _snapshot(vault) == before
+
+
+def test_apply_refuses_targets_in_notes(vault, tmp_path):
+    toml = vault / "vault.toml"
+    toml.write_text(toml.read_text() + f'\n[logs]\nactivity_dir = "{tmp_path}/Notes/activity"\n')
+    vc.clear_cache()
+    assert mig.main(["--apply"]) == 2
+    assert list((tmp_path / "Notes").iterdir()) == []
+    assert (vault / "logs" / "activity.md").exists()
+
+
+def test_failed_write_removes_partial_outputs(vault):
+    toml = vault / "vault.toml"
+    toml.write_text(toml.read_text() + '\n[logs]\nsync = "logs/blocker/sync.jsonl"\n')
+    (vault / "logs" / "blocker").write_text("not a directory")
+    vc.clear_cache()
+    before = _snapshot(vault)
+    assert mig.main(["--apply"]) == 1
+    assert _snapshot(vault) == before
+    assert (vault / "logs" / "activity.md").exists()
+    assert not list((vault / "logs" / "activity").glob("*.md"))
+
+
+def _no_temp_files(root: Path) -> bool:
+    return not [p for p in root.rglob("*.tmp")]
+
+
+def test_failure_leaves_published_outputs_and_lists_them(vault, monkeypatch, capsys):
+    """A session appending to a freshly published month file must not lose its entry on rollback."""
+    real_link = mig.os.link
+    march = vault / "logs" / "activity" / "2026-03.md"
+
+    def link(src, dst, *a, **k):
+        if str(dst).endswith(".md") or str(dst).endswith(".jsonl"):
+            return real_link(src, dst, *a, **k)
+        with open(march, "a", encoding="utf-8") as f:  # concurrent host session
+            f.write("\n## 2026-03-31T12:00\n\n**Action:** concurrent\n\n---\n")
+        raise OSError("backup link failed")
+
+    monkeypatch.setattr(mig.os, "link", link)
+    assert mig.main(["--apply"]) == 1
+    assert "**Action:** concurrent" in march.read_text(encoding="utf-8")
+    # Published outputs are never deleted on failure; they're listed for manual reconciliation.
+    err = capsys.readouterr().err
+    for p in [vault / "logs" / "activity" / "2026-02.md", march, vault / "logs" / "sync.jsonl"]:
+        assert p.exists() and str(p) in err
+    assert (vault / "logs" / "activity.md").read_text(encoding="utf-8") == FIXTURE
+    assert _no_temp_files(vault)
+
+
+def test_backup_never_clobbers_raced_destination(vault, monkeypatch, capsys):
+    real_link = mig.os.link
+
+    def link(src, dst, *a, **k):
+        if ".pre-split-" in str(dst):
+            Path(dst).write_text("raced")
+        return real_link(src, dst, *a, **k)
+
+    monkeypatch.setattr(mig.os, "link", link)
+    assert mig.main(["--apply"]) == 1
+    backups = list((vault / "logs").glob("activity.md.pre-split-*"))
+    assert len(backups) == 1 and backups[0].read_text() == "raced"
+    assert (vault / "logs" / "activity.md").read_text(encoding="utf-8") == FIXTURE
+    err = capsys.readouterr().err
+    for name in ("2026-02.md", "2026-03.md", "unsorted.md"):
+        assert (vault / "logs" / "activity" / name).exists()
+        assert str(vault / "logs" / "activity" / name) in err
+    assert _no_temp_files(vault)
+
+
+def test_failed_legacy_unlink_leaves_backup_and_lists_it(vault, monkeypatch, capsys):
+    legacy = vault / "logs" / "activity.md"
+    real_unlink = Path.unlink
+
+    def unlink(self, *a, **k):
+        if self == legacy:
+            raise OSError("unlink failed")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    assert mig.main(["--apply"]) == 1
+    backups = list((vault / "logs").glob("activity.md.pre-split-*"))
+    assert len(backups) == 1 and backups[0].read_text(encoding="utf-8") == FIXTURE
+    assert legacy.read_text(encoding="utf-8") == FIXTURE
+    assert str(backups[0]) in capsys.readouterr().err
+    assert _no_temp_files(vault)

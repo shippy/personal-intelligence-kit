@@ -34,8 +34,8 @@ from vault_config import (  # noqa: E402
     browser_history_path,
     browser_type,
     browser_db_path,
-    activity_log,
 )
+from activity import log_sync  # noqa: E402
 
 
 NOISE_DOMAINS = {
@@ -158,13 +158,8 @@ def _ingest(args, tmp: Path) -> int:
     print(f"Imported {imported} visits ({skipped} noise filtered) → {out_path}")
 
     # Log
-    log = activity_log()
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as f:
-        f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
-        f.write(f"**Action:** Browser history ingest ({browser_type()})\n")
-        f.write(f"**Imported:** {imported}, **Filtered:** {skipped}\n")
-        f.write(f"**Output:** `data/browser-history.db`\n\n---\n")
+    log_sync("browser-ingest", ok=True, stats={"browser": browser_type(), "imported": imported, "filtered": skipped},
+             outputs=[str(out_path)])
 
     return 0
 

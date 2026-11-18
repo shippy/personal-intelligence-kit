@@ -32,8 +32,8 @@ from vault_config import (  # noqa: E402
     browser_db_path,
     output_dir,
     content_link,
-    activity_log,
 )
+from activity import append_activity  # noqa: E402
 import okf  # noqa: E402
 
 
@@ -163,13 +163,11 @@ def main():
     except FileNotFoundError:
         pass
 
-    log = activity_log()
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as f:
-        f.write(f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n")
-        f.write("**Action:** Session health check\n")
-        f.write(f"**Active clusters:** {len(active)}, **Dormant:** {len(dormant)}\n")
-        f.write(f"**Output:** [[{content_link(output_dir('alerts') / f'session-health-{date}.md')}]]\n\n---\n")
+    append_activity("Session health check", {
+        "Active clusters": str(len(active)),
+        "Dormant": str(len(dormant)),
+        "Outputs": [f"[[{content_link(output_dir('alerts') / f'session-health-{date}.md')}]]"],
+    })
 
     return 0
 
