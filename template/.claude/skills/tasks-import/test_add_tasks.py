@@ -73,8 +73,10 @@ def graph(vault, monkeypatch):
 
 
 def log_text(vault):
-    path = vault / "logs" / "activity.md"
-    return path.read_text() if path.exists() else ""
+    """Every monthly activity file, concatenated (the helper picks the month)."""
+    files = sorted((vault / "logs" / "activity").glob("*.md"))
+    assert not (vault / "logs" / "activity.md").exists()
+    return "".join(f.read_text() for f in files)
 
 
 def test_preview_writes_nothing(graph, vault, capsys):
@@ -99,7 +101,10 @@ def test_yes_posts_expected_payloads_and_logs(graph, vault, monkeypatch):
         ("/me/todo/lists/soc/tasks", {"title": "Coffee", "body": body}),
     ]
     log = log_text(vault)
-    assert "list: Social" in log and "- Text Viktor\n" in log and "- Coffee\n" in log
+    assert "**Action:** Tasks added to Microsoft To Do (2)\n" in log
+    assert "**List:** Social\n" in log and "- Text Viktor\n" in log and "- Coffee\n" in log
+    assert "Stopped at failure" not in log
+    assert log.count("\n## ") == 1
 
 
 def test_provenance_without_note():
@@ -150,7 +155,7 @@ def test_stops_at_first_failed_post(graph, vault, capsys):
     assert "Created 1 of 3" in out and "Failed on 'B'" in out
     assert out.split("Not created:")[1].split() == ["-", "B", "-", "C"]
     log = log_text(vault)
-    assert "- A\n" in log and "Stopped at failure:** B" in log and "- C" not in log
+    assert "- A\n" in log and "**Stopped at failure:** B\n" in log and "- C" not in log
 
 
 @pytest.mark.parametrize("titles, message", [
@@ -322,7 +327,7 @@ def test_log_renders_titles_and_list_name_inert(graph, vault, monkeypatch):
     log = log_text(vault)
     for raw in ("<!--", "<b>", "![x](", "**bold**", "[l](u)"):
         assert raw not in log
-    assert "&lt;\\!\\-\\- hide \\-\\-&gt;" in log and "list: &lt;b&gt;L&lt;/b&gt;" in log
+    assert "&lt;\\!\\-\\- hide \\-\\-&gt;" in log and "**List:** &lt;b&gt;L&lt;/b&gt;\n" in log
 
 
 def test_emoji_and_accents_are_allowed():
@@ -340,3 +345,17 @@ def test_graph_list_names_are_sanitized_for_display(graph, vault, monkeypatch, c
     for text in (out, log):
         assert "\u202e" not in text and "\x1b" not in text
     assert "Soc\ufffdial\ufffd" in out
+
+
+def test_log_goes_through_append_activity_with_escaped_fields(graph, monkeypatch):
+    calls = []
+    monkeypatch.setattr(add, "append_activity", lambda action, fields: calls.append((action, fields)))
+    monkeypatch.setattr(add, "fetch_lists", lambda credential: [{"id": "e", "displayName": "# <i>L</i>"}])
+    graph.fail_on = "[b](x)"
+    assert add.main(["--list", "# <i>L</i>", "# ok *a*", "[b](x)", "--yes"]) == 1
+    assert [p["title"] for _, p in graph.posts] == ["# ok *a*"]  # raw only in the Graph payload
+    assert calls == [("Tasks added to Microsoft To Do (1)", {
+        "List": "\\# &lt;i&gt;L&lt;/i&gt;",
+        "Created": ["\\# ok \\*a\\*"],
+        "Stopped at failure": "\\[b\\]\\(x\\)",
+    })]

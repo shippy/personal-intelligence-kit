@@ -23,13 +23,14 @@ from __future__ import annotations
 import argparse
 import sys
 import unicodedata
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import import_tasks as todo  # noqa: E402  (also puts _lib on sys.path)
-from vault_config import activity_log, load_config, safe_write  # noqa: E402
+from activity import append_activity  # noqa: E402
+from vault_config import load_config  # noqa: E402
 
 WRITE_SCOPE = "Tasks.ReadWrite"
 WRITE_CACHE = "pik-todo-write"
@@ -176,16 +177,13 @@ def md_text(text: str) -> str:
 
 
 def log_activity(list_name: str, created: list[str], failed: str | None) -> None:
-    lines = [
-        f"\n## {datetime.now().strftime('%Y-%m-%dT%H:%M')}\n\n",
-        f"**Action:** Tasks added (Microsoft To Do, list: {md_text(list_name)})\n",
-        f"**Created:** {len(created)}\n",
-        *(f"- {md_text(t)}\n" for t in created),
-    ]
-    if failed is not None:
-        lines.append(f"**Stopped at failure:** {md_text(failed)}\n")
-    lines.append("\n---\n")
-    safe_write(activity_log(), "".join(lines), append=True)
+    """Append one entry to the monthly activity log. Untrusted text is escaped first."""
+    fields = {
+        "List": md_text(list_name),
+        "Created": [md_text(t) for t in created],
+        "Stopped at failure": md_text(failed) if failed is not None else None,
+    }
+    append_activity(f"Tasks added to Microsoft To Do ({len(created)})", fields)
 
 
 def read_titles(args) -> list[str]:

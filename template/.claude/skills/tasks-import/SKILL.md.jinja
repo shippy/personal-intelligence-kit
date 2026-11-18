@@ -100,7 +100,7 @@ uv run add_tasks.py --list Social --file tasks.txt --note "[[2026-11-16 briefing
 - Each task's body records `Added by Claude (pki vault), YYYY-MM-DD`, plus the `--note` text.
 - Limits: titles of 1–255 characters without control characters, at most 50 per run.
 - On the first failed request it stops and reports what was and wasn't created. It doesn't retry (except throttling with `Retry-After`), so rerun only after checking To Do; already-created titles are skipped on a rerun.
-- A real run appends an entry to `logs/activity.md`.
+- A real run appends an entry to the monthly activity log, `logs/activity/YYYY-MM.md`, through `append_activity()`. Titles and the list name are escaped there; the raw title goes only to To Do.
 
 ### One-time sign-in
 
