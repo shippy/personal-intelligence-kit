@@ -1,0 +1,342 @@
+"""Create-only Microsoft To Do writer: preview, dedup, list matching, failures, auth."""
+
+import importlib.util
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "_lib"))
+import vault_config as vc  # noqa: E402
+
+spec = importlib.util.spec_from_file_location("todo_add", HERE / "add_tasks.py")
+add = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(add)
+todo = add.todo
+
+LISTS = [
+    {"id": "soc", "displayName": "Social"},
+    {"id": "work", "displayName": "Work"},
+    {"id": "w2", "displayName": "work "},
+    {"id": "home", "displayName": "Home"},
+]
+
+
+@pytest.fixture
+def vault(tmp_path, monkeypatch):
+    logic = tmp_path / "logic"
+    logic.mkdir()
+    (logic / "vault.toml").write_text(
+        f'[sources.tasks]\nenabled = true\nprovider = "microsoft-todo"\n'
+        f'[paths]\nstate_root = "{tmp_path / "state"}"\n'
+    )
+    monkeypatch.setenv(vc.ENV_VAR, str(logic))
+    vc.clear_cache()
+    yield logic
+    vc.clear_cache()
+
+
+@pytest.fixture
+def graph(vault, monkeypatch):
+    """Fake Graph: lists, open tasks per list, and a record of POSTs."""
+    state = SimpleNamespace(open={"soc": ["Existing task"]}, posts=[], gets=[], fail_on=None)
+
+    def get(credential, endpoint, **kwargs):
+        assert kwargs == {"scope": "Tasks.ReadWrite"}
+        state.gets.append(endpoint)
+        if endpoint == "/me/todo/lists":
+            return {"value": LISTS}
+        list_id = endpoint.split("/")[4].split("?")[0]
+        assert endpoint.endswith("?" + add.OPEN_FILTER)
+        return {"value": [{"title": t} for t in state.open.get(list_id, [])]}
+
+    def post(credential, endpoint, payload, *, scope):
+        assert scope == "Tasks.ReadWrite"
+        if payload["title"] == state.fail_on:
+            raise RuntimeError("HTTP 500")
+        state.posts.append((endpoint, payload))
+        return {"id": "new"}
+
+    calls = []
+
+    def credential(**kwargs):
+        calls.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(todo, "_ms_graph_get", get)
+    monkeypatch.setattr(todo, "_ms_graph_post", post)
+    monkeypatch.setattr(todo, "_get_ms_credential", credential)
+    state.credential_calls = calls
+    return state
+
+
+def log_text(vault):
+    path = vault / "logs" / "activity.md"
+    return path.read_text() if path.exists() else ""
+
+
+def test_preview_writes_nothing(graph, vault, capsys):
+    assert add.main(["--list", "Social", "Text Viktor", "Coffee with Lepka"]) == 0
+    assert graph.posts == []
+    assert log_text(vault) == ""
+    out = capsys.readouterr().out
+    assert "Preview" in out and "+ Text Viktor" in out and "+ Coffee with Lepka" in out
+    assert graph.credential_calls == [{
+        "scope": "Tasks.ReadWrite", "cache_name": "pik-todo-write",
+        "record_name": "ms_auth_record_write.json", "interactive": False,
+    }]
+
+
+def test_yes_posts_expected_payloads_and_logs(graph, vault, monkeypatch):
+    today = add.date(2026, 11, 16)
+    monkeypatch.setattr(add, "date", SimpleNamespace(today=lambda: today))
+    assert add.main(["--list", "social", "Text Viktor", "Coffee", "--note", "[[brief]]", "--yes"]) == 0
+    body = {"contentType": "text", "content": "Added by Claude (pki vault), 2026-11-16\n[[brief]]"}
+    assert graph.posts == [
+        ("/me/todo/lists/soc/tasks", {"title": "Text Viktor", "body": body}),
+        ("/me/todo/lists/soc/tasks", {"title": "Coffee", "body": body}),
+    ]
+    log = log_text(vault)
+    assert "list: Social" in log and "- Text Viktor\n" in log and "- Coffee\n" in log
+
+
+def test_provenance_without_note():
+    assert add.provenance(None, add.date(2026, 1, 2)) == "Added by Claude (pki vault), 2026-01-02"
+
+
+def test_dedup_against_open_tasks_and_within_batch(graph, capsys):
+    titles = ["  existing TASK ", "New one", "new ONE", "Other"]
+    assert add.main(["--list", "Social", *titles, "--yes"]) == 0
+    assert [p["title"] for _, p in graph.posts] == ["New one", "Other"]
+    out = capsys.readouterr().out
+    assert "already an open task" in out and "duplicate within this batch" in out
+
+
+def test_titles_from_file_ignore_blank_lines(graph, tmp_path):
+    f = tmp_path / "tasks.txt"
+    f.write_text("One\n\n   \nTwo\n")
+    assert add.main(["--list", "Social", "--file", str(f), "--yes"]) == 0
+    assert [p["title"] for _, p in graph.posts] == ["One", "Two"]
+
+
+def test_list_ids_are_quoted_in_urls(graph, monkeypatch):
+    lists = [{"id": "a/b?c=", "displayName": "Odd"}]
+    monkeypatch.setattr(add, "fetch_lists", lambda credential: lists)
+    assert add.main(["--list", "Odd", "x", "--yes"]) == 0
+    assert graph.posts[0][0] == "/me/todo/lists/a%2Fb%3Fc%3D/tasks"
+
+
+@pytest.mark.parametrize("name, expected", [("Social", "soc"), ("HOME", "home"), (" home ", "home")])
+def test_list_match(name, expected):
+    assert add.match_list(LISTS, name)["id"] == expected
+
+
+@pytest.mark.parametrize("name, problem", [("Nope", "No list matches"), ("WORK", "More than one")])
+def test_list_missing_or_ambiguous_exits_nonzero_with_names(graph, capsys, name, problem):
+    assert add.main(["--list", name, "x", "--yes"]) != 0
+    out = capsys.readouterr().out
+    assert problem in out
+    assert all(f"- {tl['displayName']}" in out for tl in LISTS)
+    assert graph.posts == []
+
+
+def test_stops_at_first_failed_post(graph, vault, capsys):
+    graph.fail_on = "B"
+    assert add.main(["--list", "Social", "A", "B", "C", "--yes"]) == 1
+    assert [p["title"] for _, p in graph.posts] == ["A"]
+    out = capsys.readouterr().out
+    assert "Created 1 of 3" in out and "Failed on 'B'" in out
+    assert out.split("Not created:")[1].split() == ["-", "B", "-", "C"]
+    log = log_text(vault)
+    assert "- A\n" in log and "Stopped at failure:** B" in log and "- C" not in log
+
+
+@pytest.mark.parametrize("titles, message", [
+    (["   "], "must not be empty"),
+    (["x" * 256], "longer than 255"),
+    ([f"t{i}" for i in range(51)], "Too many tasks"),
+    (["line\nbreak"], "control or bidi character"),
+    (["csi \u009b31m"], "control or bidi character"),
+    (["evil \u202etxt.exe"], "control or bidi character"),
+    (["isolate \u2066x\u2069"], "control or bidi character"),
+])
+def test_input_limits(graph, capsys, titles, message):
+    assert add.main(["--list", "Social", *titles, "--yes"]) == 2
+    assert message in capsys.readouterr().out
+    assert graph.posts == [] and graph.gets == []
+
+
+def test_limits_allow_255_chars_and_50_tasks():
+    assert add.validate_titles(["x" * 255])
+    assert len(add.validate_titles([f"t{i}" for i in range(50)])) == 50
+
+
+# ---------- auth ----------
+
+class FakeIdentity:
+    """Stand-in for azure.identity that records what the code asked for."""
+
+    def __init__(self):
+        self.created, self.authenticated, self.cache_names = [], [], []
+        identity = self
+
+        class Record:
+            @staticmethod
+            def deserialize(text):
+                return ("record", text)
+
+        class Options:
+            def __init__(self, name):
+                identity.cache_names.append(name)
+
+        class Credential:
+            def __init__(self, **kwargs):
+                identity.created.append(kwargs)
+
+            def authenticate(self, scopes):
+                identity.authenticated.append(scopes)
+                return SimpleNamespace(serialize=lambda: "{}")
+
+        self.module = SimpleNamespace(
+            AuthenticationRecord=Record, DeviceCodeCredential=Credential,
+            TokenCachePersistenceOptions=Options,
+        )
+
+
+@pytest.fixture
+def identity(vault, monkeypatch):
+    fake = FakeIdentity()
+    monkeypatch.setitem(sys.modules, "azure", SimpleNamespace(identity=fake.module))
+    monkeypatch.setitem(sys.modules, "azure.identity", fake.module)
+    return fake
+
+
+@pytest.mark.parametrize("argv", [["--list", "Social", "x", "--yes"], ["--list", "Social", "x"], ["--lists"]])
+def test_refuses_to_prompt_without_write_record(identity, capsys, argv):
+    assert add.main(argv) == 1
+    assert "run `uv run add_tasks.py --test-auth` first" in capsys.readouterr().out
+    assert identity.created == [] and identity.authenticated == []
+
+
+def test_read_record_does_not_count_as_write_sign_in(identity, vault, tmp_path, capsys):
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "ms_auth_record.json").write_text("{}")
+    assert add.main(["--lists"]) == 1
+    assert identity.created == []
+
+
+def test_expired_write_session_does_not_prompt(identity, tmp_path, monkeypatch, capsys):
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "ms_auth_record_write.json").write_text("{}")
+
+    class AuthenticationRequiredError(Exception):
+        pass
+
+    def get(credential, endpoint, **kwargs):
+        raise AuthenticationRequiredError("interaction required")
+
+    monkeypatch.setattr(todo, "_ms_graph_get", get)
+    assert add.main(["--lists"]) == 1
+    assert "--test-auth" in capsys.readouterr().out
+    assert identity.created[0]["disable_automatic_authentication"] is True
+    assert identity.cache_names == ["pik-todo-write"]
+
+
+def test_test_auth_signs_in_with_write_scope_and_separate_record(identity, tmp_path, monkeypatch):
+    monkeypatch.setattr(add, "fetch_lists", lambda credential: LISTS)
+    assert add.main(["--test-auth"]) == 0
+    assert identity.authenticated == [["Tasks.ReadWrite"]]
+    assert identity.cache_names == ["pik-todo-write"]
+    assert "disable_automatic_authentication" not in identity.created[0]
+    assert (tmp_path / "state" / "ms_auth_record_write.json").exists()
+    assert not (tmp_path / "state" / "ms_auth_record.json").exists()
+
+
+def test_reader_still_uses_read_scope_and_cache(identity, tmp_path, monkeypatch):
+    todo._get_ms_credential()
+    assert identity.authenticated == [["Tasks.Read"]]
+    assert identity.cache_names == ["pik-todo"]
+    assert "disable_automatic_authentication" not in identity.created[0]
+    assert (tmp_path / "state" / "ms_auth_record.json").exists()
+    assert not (tmp_path / "state" / "ms_auth_record_write.json").exists()
+
+    scopes = []
+    credential = SimpleNamespace(get_token=lambda s: scopes.append(s) or SimpleNamespace(token="t"))
+    response = SimpleNamespace(status_code=200, raise_for_status=lambda: None, json=lambda: {"value": []})
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(get=lambda url, **kw: response))
+    todo._ms_graph_get(credential, "/me/todo/lists")
+    assert scopes == ["Tasks.Read"]
+
+
+# ---------- POST helper ----------
+
+def _post_responses(monkeypatch, responses):
+    sent = []
+
+    def post(url, **kwargs):
+        sent.append((url, kwargs["json"]))
+        return responses.pop(0)
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(post=post))
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    return sent
+
+
+def _resp(status, headers=None):
+    def raise_for_status():
+        if status >= 400:
+            raise RuntimeError(f"HTTP {status}")
+    return SimpleNamespace(status_code=status, headers=headers or {},
+                           raise_for_status=raise_for_status, json=lambda: {"id": "x"})
+
+
+CRED = SimpleNamespace(get_token=lambda scope: SimpleNamespace(token="t"))
+
+
+def test_post_retries_only_throttling_with_retry_after(monkeypatch):
+    sent = _post_responses(monkeypatch, [_resp(429, {"Retry-After": "2"}), _resp(201)])
+    assert todo._ms_graph_post(CRED, "/me/todo/lists/a/tasks", {"title": "x"}, scope="s") == {"id": "x"}
+    assert len(sent) == 2 and sent[0][0] == todo._MS_GRAPH_BASE + "/me/todo/lists/a/tasks"
+
+
+@pytest.mark.parametrize("response", [_resp(429), _resp(503), _resp(500, {"Retry-After": "1"}), _resp(400)])
+def test_post_does_not_retry_otherwise(monkeypatch, response):
+    sent = _post_responses(monkeypatch, [response, _resp(201)])
+    with pytest.raises(RuntimeError):
+        todo._ms_graph_post(CRED, "/x", {}, scope="s")
+    assert len(sent) == 1
+
+
+def test_post_rejects_absolute_urls():
+    with pytest.raises(ValueError):
+        todo._ms_graph_post(CRED, "https://example.invalid/x", {}, scope="s")
+
+
+def test_log_renders_titles_and_list_name_inert(graph, vault, monkeypatch):
+    hostile = "<!-- hide --> ![x](https://evil.invalid/p.png) **bold** [l](u)"
+    monkeypatch.setattr(add, "fetch_lists", lambda credential: [{"id": "e", "displayName": "<b>L</b>"}])
+    assert add.main(["--list", "<b>L</b>", hostile, "--yes"]) == 0
+    assert graph.posts[0][1]["title"] == hostile  # Graph gets the raw title
+    log = log_text(vault)
+    for raw in ("<!--", "<b>", "![x](", "**bold**", "[l](u)"):
+        assert raw not in log
+    assert "&lt;\\!\\-\\- hide \\-\\-&gt;" in log and "list: &lt;b&gt;L&lt;/b&gt;" in log
+
+
+def test_emoji_and_accents_are_allowed():
+    assert add.validate_titles(["Káva s Lepkou \u2615", "family \U0001F468\u200d\U0001F469"])
+
+
+def test_graph_list_names_are_sanitized_for_display(graph, vault, monkeypatch, capsys):
+    name = "Soc\u202eial\x1b[2J"
+    monkeypatch.setattr(add, "fetch_lists", lambda credential: [{"id": "s", "displayName": name}])
+    assert add.main(["--list", "Nope", "x"]) == 2
+    assert add.main(["--lists"]) == 0
+    assert add.main(["--list", name, "x", "--yes"]) == 0
+    out = capsys.readouterr().out
+    log = log_text(vault)
+    for text in (out, log):
+        assert "\u202e" not in text and "\x1b" not in text
+    assert "Soc\ufffdial\ufffd" in out

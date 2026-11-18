@@ -1,11 +1,11 @@
 ---
 name: tasks-import
-description: Sync tasks from your task manager ({{ task_provider if enable_tasks else 'configured provider' }}) into a local SQLite database for cross-source queries. Not for task management — only for coherence checks against journal intentions, calendar, and email.
+description: Sync tasks from your task manager ({{ task_provider if enable_tasks else 'configured provider' }}) into a local SQLite database for cross-source queries, plus create-only task capture into Microsoft To Do (add_tasks.py, previewed first). Not for managing tasks — it never updates, completes or deletes them.
 ---
 
 # Tasks Import
 
-Imports {{ owner_name }}'s tasks from their configured task manager into `data/tasks.db`. Purpose: cross-source coherence (does what you're *doing* match what you're *saying* and *committing to*?), **not** task management.
+Imports {{ owner_name }}'s tasks from their configured task manager into `data/tasks.db`. Purpose: cross-source coherence (does what you're *doing* match what you're *saying* and *committing to*?), **not** task management. The one write it supports is adding new tasks to Microsoft To Do on request (see [Writing tasks](#writing-tasks-microsoft-to-do)).
 
 ## Supported Providers
 
@@ -80,6 +80,39 @@ No setup required — reads the local Things database at `~/Library/Group Contai
 
 Requires Full Disk Access for Terminal.app on recent macOS.
 {%- endif %}
+
+## Writing tasks (Microsoft To Do)
+
+`add_tasks.py` adds new tasks to an existing To Do list, for example the follow-ups at the end of a session. It is create-only: it cannot update, complete or delete a task, and never creates, renames or deletes a list. No reminders, due dates or recurrence.
+
+```bash
+cd .claude/skills/tasks-import
+uv run add_tasks.py --lists                                  # list names (read-only)
+uv run add_tasks.py --list Social "Text Viktor" "Suggest a coffee time to Lepka"   # preview
+uv run add_tasks.py --list Social --file tasks.txt           # one title per line, blank lines ignored
+uv run add_tasks.py --list Social --file tasks.txt --yes     # actually create them
+uv run add_tasks.py --list Social --file tasks.txt --note "[[2026-11-16 briefing]]" --yes  # link back
+```
+
+- **Preview is the default.** Without `--yes` it prints the list, each title and what it would skip, and writes nothing. Show {{ owner_name }} the preview and create only after they agree.
+- `--list` matches the display name, ignoring case. No match or more than one match → non-zero exit with the available names.
+- Titles that match an open task in the list (trimmed, ignoring case), and repeats within the batch, are skipped.
+- Each task's body records `Added by Claude (pki vault), YYYY-MM-DD`, plus the `--note` text.
+- Limits: titles of 1–255 characters without control characters, at most 50 per run.
+- On the first failed request it stops and reports what was and wasn't created. It doesn't retry (except throttling with `Retry-After`), so rerun only after checking To Do; already-created titles are skipped on a rerun.
+- A real run appends an entry to `logs/activity.md`.
+
+### One-time sign-in
+
+Writing needs its own sign-in with the `Tasks.ReadWrite` scope. {{ owner_name }} runs this once, interactively, on the host:
+
+```bash
+uv run add_tasks.py --test-auth
+```
+
+It uses a separate token cache (`pik-todo-write`) and auth record (`ms_auth_record_write.json` in the state directory), so the nightly read sync keeps its own `Tasks.Read` cache and record. Every other mode fails fast with "run `uv run add_tasks.py --test-auth` first" instead of prompting, so an agent never hangs on a device-code prompt nobody sees. The first run with a new uv Python may trigger a macOS Keychain dialog for the token cache: choose **Always Allow**.
+
+**Consent caveat:** consent is granted per app and per account. Granting `Tasks.ReadWrite` to the Microsoft Graph CLI app means a refresh token from the read cache could in principle request write access too. The separate caches keep the sync job independent; they are not a privilege boundary.
 
 ## Data Contract
 
