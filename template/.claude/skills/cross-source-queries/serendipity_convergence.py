@@ -311,7 +311,8 @@ def generate_report() -> Optional[Path]:
         "reports", f"convergence-{date}", type="report",
         title=f"Convergence Report — {date}",
         description=f"{len(topic_conv)} topic, {len(person_conv)} person convergences",
-        body="\n".join(lines), timestamp=date, status="final", tags=["convergence"],
+        body="\n".join(lines), timestamp=date, generated_by=okf.actor("serendipity-convergence"),
+        tags=["convergence"],
     )
     print(f"Wrote {out}")
 

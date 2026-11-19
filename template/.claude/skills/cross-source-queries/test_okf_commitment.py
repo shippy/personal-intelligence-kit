@@ -19,6 +19,9 @@ def test_commitment_report_is_okf_conformant(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "CommitmentAccountabilityAnalyzer", lambda: FakeAnalyzer())
     path = mod.generate_report()
-    assert okf.read_frontmatter(path)["type"] == "alert"
+    fm = okf.read_frontmatter(path)
+    assert fm["type"] == "alert"
+    assert fm["generated"]["by"] == "process:commitment-accountability"
+    assert fm["sources"] == [{"resource": "source:email"}]
     assert (tmp_path / "log.md").exists()
     assert "**Action:** Commitment accountability scan" in (tmp_path / "activity.md").read_text()

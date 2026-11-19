@@ -172,8 +172,8 @@ def generate_report() -> Optional[Path]:
         "alerts", f"commitment-accountability-{date}", type="alert",
         title=f"Commitment Accountability — {date}",
         description=f"{report['total']} commitments tracked in sent mail",
-        body="\n".join(lines), timestamp=date, status="final",
-        sources=["email"], tags=["commitment"],
+        body="\n".join(lines), timestamp=date, generated_by=okf.actor("commitment-accountability"),
+        source_feeds=["email"], tags=["commitment"],
     )
     print(f"Wrote {out}")
 
