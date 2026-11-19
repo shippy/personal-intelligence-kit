@@ -14,7 +14,7 @@ All databases live in `data/` under the **content root** (`[paths].content_root`
 `[data] root` moves the whole directory (`data_dir()`). Host-only state such as auth records goes to `state_dir()`, never to `data/` directly. Write files through `safe_write()` (or `okf.write_concept()`), which refuse any path inside the read-only notes vault.
 
 > **Output format:** analysis skills emit markdown into `output/`, which is an
-> OKF v0.1 bundle. See `_lib/OKF.md` and write outputs via `_lib/okf.py`.
+> OKF v0.2 bundle. See `_lib/OKF.md` and write outputs via `_lib/okf.py`.
 
 ---
 
