@@ -24,8 +24,12 @@ def _scalar(value: Any) -> str:
 
 
 def _render_value(value: Any) -> str:
+    """Render a value in YAML flow style: mappings as {k: v}, sequences as
+    [a, b], recursively; every leaf is a double-quoted scalar."""
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{k}: {_render_value(v)}" for k, v in value.items()) + "}"
     if isinstance(value, (list, tuple)):
-        return "[" + ", ".join(_scalar(v) for v in value) + "]"
+        return "[" + ", ".join(_render_value(v) for v in value) + "]"
     return _scalar(value)
 
 
@@ -110,8 +114,8 @@ def read_frontmatter(path: Any) -> dict[str, Any]:
     """Parse a concept file's YAML frontmatter into a dict ({} if none).
 
     Handles the subset emitted by render_frontmatter (double-quoted scalars and
-    flow lists of quoted scalars) plus simple unquoted scalars, so no external
-    YAML dependency is required.
+    nested flow mappings/sequences of them) plus simple unquoted scalars, so no
+    external YAML dependency is required.
     """
     text = Path(path).read_text()
     if not text.startswith("---\n"):
@@ -130,18 +134,31 @@ def read_frontmatter(path: Any) -> dict[str, Any]:
 
 
 def _parse_value(raw: str) -> Any:
+    """Parse the flow subset emitted by _render_value (recursively)."""
+    raw = raw.strip()
     if raw.startswith("[") and raw.endswith("]"):
         inner = raw[1:-1].strip()
         if not inner:
             return []
-        return [_unquote(item) for item in _split_flow(inner)]
+        return [_parse_value(item) for item in _split_flow(inner)]
+    if raw.startswith("{") and raw.endswith("}"):
+        inner = raw[1:-1].strip()
+        if not inner:
+            return {}
+        out: dict[str, Any] = {}
+        for entry in _split_flow(inner):
+            key, value = (_split_flow(entry, sep=":", maxsplit=1) + [""])[:2]
+            out[_unquote(key)] = _parse_value(value)
+        return out
     return _unquote(raw)
 
 
-def _split_flow(inner: str) -> list[str]:
-    """Split a flow sequence on commas that are not inside a quoted scalar."""
+def _split_flow(inner: str, sep: str = ",", maxsplit: int = -1) -> list[str]:
+    """Split flow content on `sep` where it is neither inside a quoted scalar
+    nor inside a nested [..] or {..} collection."""
     items: list[str] = []
     buf: list[str] = []
+    depth = 0
     in_quote = esc = False
     for ch in inner:
         if esc:
@@ -153,7 +170,15 @@ def _split_flow(inner: str) -> list[str]:
         elif ch == '"':
             in_quote = not in_quote
             buf.append(ch)
-        elif ch == "," and not in_quote:
+        elif in_quote:
+            buf.append(ch)
+        elif ch in "[{":
+            depth += 1
+            buf.append(ch)
+        elif ch in "]}":
+            depth -= 1
+            buf.append(ch)
+        elif ch == sep and depth == 0 and (maxsplit < 0 or len(items) < maxsplit):
             items.append("".join(buf))
             buf = []
         else:

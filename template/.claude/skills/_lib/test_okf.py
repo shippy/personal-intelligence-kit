@@ -102,3 +102,35 @@ def test_custom_category_directory_and_root_changelog(tmp_path, monkeypatch):
     assert path.read_text().endswith("Notes")
     assert (root / "log.md").exists()
     assert not (root / "reflections").exists()
+
+
+def test_render_nested_flow_shapes():
+    block = okf.render_frontmatter({
+        "generated": {"by": "process:x", "at": "2026-11-19T10:00:00+00:00"},
+        "sources": [{"resource": "source:email"}, {"resource": "source:notes"}],
+    })
+    assert 'generated: {by: "process:x", at: "2026-11-19T10:00:00+00:00"}\n' in block
+    assert 'sources: [{resource: "source:email"}, {resource: "source:notes"}]\n' in block
+
+
+def test_read_frontmatter_nested(tmp_path):
+    p = tmp_path / "c.md"
+    p.write_text(okf.render_frontmatter({
+        "type": "report",
+        "generated": {"by": "a/b", "at": "t"},
+        "sources": [{"resource": "source:x"}],
+        "empty_map": {},
+        "empty_list": [],
+    }) + "body")
+    fm = okf.read_frontmatter(p)
+    assert fm["generated"] == {"by": "a/b", "at": "t"}
+    assert fm["sources"][0]["resource"] == "source:x"
+    assert fm["empty_map"] == {}
+    assert fm["empty_list"] == []
+
+
+def test_nested_roundtrip_with_special_chars(tmp_path):
+    value = {"by": 'we, "q": {x} [y]', "list": ["a, b", {"k": "v: w"}]}
+    p = tmp_path / "c.md"
+    p.write_text(okf.render_frontmatter({"type": "t", "m": value}))
+    assert okf.read_frontmatter(p)["m"] == value
