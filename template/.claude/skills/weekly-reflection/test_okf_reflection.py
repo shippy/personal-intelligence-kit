@@ -26,6 +26,7 @@ def test_reflection_is_okf_conformant(tmp_path, monkeypatch):
     fm = okf.read_frontmatter(path)
     assert fm["type"] == "reflection"
     assert fm["title"]
+    assert fm["generated"]["by"] == "process:weekly-reflection"
     assert (tmp_path / "log.md").exists()
     assert not body.startswith("---")  # frontmatter no longer in the body
 
@@ -41,3 +42,11 @@ def test_explicit_reflection_directory_is_preserved(tmp_path, monkeypatch):
     assert okf.read_frontmatter(path)["type"] == "reflection"
     assert (root / "log.md").exists()
     assert not (root / "reflections").exists()
+
+
+def test_reflection_records_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
+    monkeypatch.setattr(output_formatter, "owner_name", lambda: "Alex")
+    fmt = ReflectionFormatter()
+    path = fmt.save(fmt.format(_min_reflection()), model="gpt-5.5")
+    assert okf.read_frontmatter(path)["generated"]["by"] == "weekly-reflection/gpt-5.5"

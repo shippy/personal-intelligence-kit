@@ -91,7 +91,7 @@ class ReflectionFormatter:
 *This reflection is generated from actual text from your week.*
 """
 
-    def save(self, content: str, out_dir: Path | None = None) -> Path:
+    def save(self, content: str, out_dir: Path | None = None, model: str | None = None) -> Path:
         return okf.write_concept(
             "reflections",
             f"{self.review_date}-weekly-reflection",
@@ -100,5 +100,5 @@ class ReflectionFormatter:
             body=content,
             timestamp=self.review_date,
             out_dir=out_dir,
-            status="final",
+            generated_by=okf.actor("weekly-reflection", model),
         )

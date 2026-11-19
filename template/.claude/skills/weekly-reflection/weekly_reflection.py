@@ -71,7 +71,7 @@ class WeeklyReflectionOrchestrator:
         formatter = ReflectionFormatter()
         markdown = formatter.format(reflection)
         out = output_dir("reflections")
-        output_path = formatter.save(markdown, out)
+        output_path = formatter.save(markdown, out, model=self.synthesizer.model_name)
         print(f"✓ Saved: {output_path}")
 
         # Phase 5: Notify
