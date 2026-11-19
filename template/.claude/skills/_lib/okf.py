@@ -43,10 +43,22 @@ _YAML_SPECIAL = {"null", "true", "false", "yes", "no", "on", "off", "y", "n"}
 MAX_FLOW_DEPTH = 32
 
 
+def _yaml_printable(cp: int) -> bool:
+    """YAML 1.2 c-printable (minus what _ESCAPES handles)."""
+    return (
+        0x20 <= cp <= 0x7E
+        or 0xA0 <= cp <= 0xD7FF
+        or 0xE000 <= cp <= 0xFFFD
+        or 0x10000 <= cp <= 0x10FFFF
+    )
+
+
 def _escape_char(ch: str) -> str:
     if ch in _ESCAPES:
         return _ESCAPES[ch]
-    if ord(ch) < 0x20 or ch == "\x7f" or ch in _LINE_BREAKS:
+    if not _yaml_printable(ord(ch)) or ch in _LINE_BREAKS:
+        # Controls, C1, NEL, U+2028/9, U+FFFE/F and lone surrogates (which
+        # would also fail UTF-8 encoding) all fit in a \uXXXX escape.
         return f"\\u{ord(ch):04x}"
     return ch
 
@@ -66,13 +78,18 @@ def _key(key: Any) -> str:
     return _scalar(k)
 
 
-def _render_value(value: Any) -> str:
+def _render_value(value: Any, depth: int = 0) -> str:
     """Render a value in YAML flow style: mappings as {k: v}, sequences as
-    [a, b], recursively; every leaf is a double-quoted scalar."""
+    [a, b], recursively; every leaf is a double-quoted scalar. Raises
+    ValueError past MAX_FLOW_DEPTH nested collections (this also stops cycles)."""
+    if isinstance(value, (dict, list, tuple)) and depth >= MAX_FLOW_DEPTH:
+        raise ValueError(f"frontmatter nests deeper than {MAX_FLOW_DEPTH} collections")
     if isinstance(value, dict):
-        return "{" + ", ".join(f"{_key(k)}: {_render_value(v)}" for k, v in value.items()) + "}"
+        return "{" + ", ".join(
+            f"{_key(k)}: {_render_value(v, depth + 1)}" for k, v in value.items()
+        ) + "}"
     if isinstance(value, (list, tuple)):
-        return "[" + ", ".join(_render_value(v) for v in value) + "]"
+        return "[" + ", ".join(_render_value(v, depth + 1) for v in value) + "]"
     return _scalar(value)
 
 
@@ -83,7 +100,7 @@ def render_frontmatter(fields: dict[str, Any]) -> str:
     for key, value in fields.items():
         if value is None:
             continue
-        lines.append(f"{key}: {_render_value(value)}")
+        lines.append(f"{_key(key)}: {_render_value(value)}")
     lines.append("---")
     lines.append("")
     return "\n".join(lines) + "\n"
@@ -194,8 +211,8 @@ def read_frontmatter(path: Any) -> dict[str, Any]:
         line = line.strip()
         if not line or line.startswith("#") or ":" not in line:
             continue
-        key, _, raw = line.partition(":")
-        out[key.strip()] = _parse_value(raw.strip())
+        key, raw = (_split_flow(line, sep=":", maxsplit=1) + [""])[:2]
+        out[_unquote(key)] = _parse_value(raw)
     return out
 
 
@@ -275,6 +292,8 @@ def _unquote(s: str) -> str:
             out.append(chr(int(hex4, 16)))
             i += 6
         else:
-            out.append(_UNESCAPES.get(nxt, nxt))
+            # Known escapes decode; an unknown one keeps its backslash so it
+            # can't collapse into a different key or value.
+            out.append(_UNESCAPES.get(nxt, nxt if nxt in '"\\' else "\\" + nxt))
             i += 2
     return "".join(out)

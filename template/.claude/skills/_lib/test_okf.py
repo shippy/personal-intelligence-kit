@@ -243,3 +243,42 @@ def test_parse_depth_is_limited(tmp_path):
     p.write_text(f'---\ntype: "t"\nm: {"[" * 2000}{"]" * 2000}\n---\n')
     with pytest.raises(ValueError):
         okf.read_frontmatter(p)
+
+
+def test_non_printable_characters_are_escaped(tmp_path):
+    odd = "a\x80b\x9fc￾d￿e\ud800f\U0001f600g h"
+    p = tmp_path / "c.md"
+    p.write_text(okf.render_frontmatter({"type": "t", "title": odd}), encoding="utf-8", errors="strict")
+    raw = p.read_text()
+    for ch in "\x80\x9f￾￿":
+        assert ch not in raw
+    assert "\U0001f600" in raw and " " in raw  # printable non-ASCII stays literal
+    assert okf.read_frontmatter(p)["title"] == odd
+
+
+def test_render_depth_is_limited():
+    deep: list = []
+    for _ in range(okf.MAX_FLOW_DEPTH + 1):
+        deep = [deep]
+    with pytest.raises(ValueError):
+        okf.render_frontmatter({"type": "t", "m": deep})
+    cyclic: dict = {}
+    cyclic["self"] = cyclic
+    with pytest.raises(ValueError):
+        okf.render_frontmatter({"type": "t", "m": cyclic})
+
+
+def test_unknown_escape_keeps_backslash(tmp_path):
+    p = tmp_path / "c.md"
+    p.write_text('---\nm: {by: "trusted", "b\\y": "mallory"}\n---\n')
+    assert okf.read_frontmatter(p)["m"] == {"by": "trusted", "b\\y": "mallory"}
+
+
+def test_top_level_keys_cannot_inject(tmp_path):
+    p = tmp_path / "c.md"
+    p.write_text(okf.render_frontmatter({"type": "t", "ignored\nverified": "x", "null": "y", "a: b": "z"}))
+    raw = p.read_text()
+    assert "\nverified" not in raw
+    assert '"null": "y"' in raw
+    fm = okf.read_frontmatter(p)
+    assert fm == {"type": "t", "ignored\nverified": "x", "null": "y", "a: b": "z"}
