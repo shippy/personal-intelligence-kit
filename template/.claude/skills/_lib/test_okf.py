@@ -213,3 +213,33 @@ def test_actor_convention():
     assert okf.actor("session-analyzer") == "process:session-analyzer"
     assert okf.actor("weekly-reflection", "gpt-5.5") == "weekly-reflection/gpt-5.5"
     assert okf.actor("x", None) == "process:x"
+
+
+def test_unsafe_mapping_keys_are_quoted(tmp_path):
+    value = [{"by": "person:alice", "at, by": "person:mallory", "null": "x", "a: b": "y"}]
+    p = tmp_path / "c.md"
+    p.write_text(okf.render_frontmatter({"type": "t", "verified": value}))
+    text = p.read_text()
+    assert '{by: "person:alice", "at, by": "person:mallory", "null": "x", "a: b": "y"}' in text
+    assert okf.read_frontmatter(p)["verified"] == value
+
+
+def test_control_characters_are_escaped_and_roundtrip(tmp_path):
+    nasty = "a\nadmin: yes\tb\r c \x85\x0b\x00\x7f \\n end"
+    p = tmp_path / "c.md"
+    p.write_text(okf.render_frontmatter({"type": "t", "title": nasty, "m": {"by": nasty}}))
+    block = p.read_text().split("---")[1]
+    assert block.strip().count("\n") == 2  # one physical line per key
+    fm = okf.read_frontmatter(p)
+    assert fm["title"] == nasty
+    assert fm["m"] == {"by": nasty}
+    assert "admin" not in fm
+
+
+def test_parse_depth_is_limited(tmp_path):
+    p = tmp_path / "c.md"
+    p.write_text(f'---\ntype: "t"\nm: {"[" * 10}"x"{"]" * 10}\n---\n')
+    assert okf.read_frontmatter(p)["m"] == [[[[[[[[[["x"]]]]]]]]]]
+    p.write_text(f'---\ntype: "t"\nm: {"[" * 2000}{"]" * 2000}\n---\n')
+    with pytest.raises(ValueError):
+        okf.read_frontmatter(p)

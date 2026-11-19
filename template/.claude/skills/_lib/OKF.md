@@ -28,8 +28,11 @@ machine-generated personal reports: provenance (`generated`), structured
 | other keys | custom | Passed through `**extra`; consumers must keep unknown keys. `write_concept` raises `TypeError` for `status`, `sources`, `generated` or `stale_after` in `**extra`, since it computes those itself. |
 
 Nested values are written in YAML flow style (`generated: {by: "…", at: "…"}`)
-with every leaf double-quoted. `okf.read_frontmatter` parses that subset
-without PyYAML; keep both dependency-free.
+with every leaf double-quoted. Control characters and Unicode line breaks are
+escaped so each field stays on one physical line, and mapping keys that aren't
+plain identifiers (or that YAML would read as null/bool) are quoted.
+`okf.read_frontmatter` parses that subset without PyYAML (nesting is capped at
+`MAX_FLOW_DEPTH`); keep both dependency-free.
 
 ### Staleness horizons
 

@@ -6,6 +6,7 @@ bundle stays OKF-conformant (frontmatter + non-empty `type`) and the root
 log.md changelog stays current.
 """
 
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -32,17 +33,44 @@ def actor(skill: str, model: str | None = None) -> str:
     return f"{skill}/{model}" if model else f"process:{skill}"
 
 
+_ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+_UNESCAPES = {"n": "\n", "r": "\r", "t": "\t"}
+# Line breaks to str.splitlines() (and so to read_frontmatter) besides \n and \r.
+_LINE_BREAKS = {"\x85", " ", " "}
+_BARE_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+# Plain scalars YAML resolves to null/bool rather than a string key.
+_YAML_SPECIAL = {"null", "true", "false", "yes", "no", "on", "off", "y", "n"}
+MAX_FLOW_DEPTH = 32
+
+
+def _escape_char(ch: str) -> str:
+    if ch in _ESCAPES:
+        return _ESCAPES[ch]
+    if ord(ch) < 0x20 or ch == "\x7f" or ch in _LINE_BREAKS:
+        return f"\\u{ord(ch):04x}"
+    return ch
+
+
 def _scalar(value: Any) -> str:
-    """Render a value as a double-quoted, escaped YAML scalar."""
-    s = str(value).replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{s}"'
+    """Render a value as a double-quoted YAML scalar on one physical line:
+    quotes, backslashes, control characters and Unicode line breaks escaped."""
+    return '"' + "".join(_escape_char(ch) for ch in str(value)) + '"'
+
+
+def _key(key: Any) -> str:
+    """Render a mapping key bare when it is a plain identifier YAML reads as a
+    string, else as a quoted scalar (so a key can't inject structure)."""
+    k = str(key)
+    if _BARE_KEY.fullmatch(k) and k.lower() not in _YAML_SPECIAL:
+        return k
+    return _scalar(k)
 
 
 def _render_value(value: Any) -> str:
     """Render a value in YAML flow style: mappings as {k: v}, sequences as
     [a, b], recursively; every leaf is a double-quoted scalar."""
     if isinstance(value, dict):
-        return "{" + ", ".join(f"{k}: {_render_value(v)}" for k, v in value.items()) + "}"
+        return "{" + ", ".join(f"{_key(k)}: {_render_value(v)}" for k, v in value.items()) + "}"
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(_render_value(v) for v in value) + "]"
     return _scalar(value)
@@ -171,22 +199,27 @@ def read_frontmatter(path: Any) -> dict[str, Any]:
     return out
 
 
-def _parse_value(raw: str) -> Any:
-    """Parse the flow subset emitted by _render_value (recursively)."""
+def _parse_value(raw: str, depth: int = 0) -> Any:
+    """Parse the flow subset emitted by _render_value (recursively).
+    Raises ValueError past MAX_FLOW_DEPTH nested collections."""
     raw = raw.strip()
-    if raw.startswith("[") and raw.endswith("]"):
+    is_seq = raw.startswith("[") and raw.endswith("]")
+    is_map = raw.startswith("{") and raw.endswith("}")
+    if (is_seq or is_map) and depth >= MAX_FLOW_DEPTH:
+        raise ValueError(f"frontmatter nests deeper than {MAX_FLOW_DEPTH} collections")
+    if is_seq:
         inner = raw[1:-1].strip()
         if not inner:
             return []
-        return [_parse_value(item) for item in _split_flow(inner)]
-    if raw.startswith("{") and raw.endswith("}"):
+        return [_parse_value(item, depth + 1) for item in _split_flow(inner)]
+    if is_map:
         inner = raw[1:-1].strip()
         if not inner:
             return {}
         out: dict[str, Any] = {}
         for entry in _split_flow(inner):
             key, value = (_split_flow(entry, sep=":", maxsplit=1) + [""])[:2]
-            out[_unquote(key)] = _parse_value(value)
+            out[_unquote(key)] = _parse_value(value, depth + 1)
         return out
     return _unquote(raw)
 
@@ -229,14 +262,19 @@ def _unquote(s: str) -> str:
     s = s.strip()
     if not (len(s) >= 2 and s[0] == '"' and s[-1] == '"'):
         return s
-    out: list[str] = []
-    esc = False
-    for ch in s[1:-1]:
-        if esc:
+    body, out, i = s[1:-1], [], 0
+    while i < len(body):
+        ch = body[i]
+        if ch != "\\" or i + 1 == len(body):
             out.append(ch)
-            esc = False
-        elif ch == "\\":
-            esc = True
+            i += 1
+            continue
+        nxt = body[i + 1]
+        hex4 = body[i + 2:i + 6]
+        if nxt == "u" and len(hex4) == 4 and all(c in "0123456789abcdefABCDEF" for c in hex4):
+            out.append(chr(int(hex4, 16)))
+            i += 6
         else:
-            out.append(ch)
+            out.append(_UNESCAPES.get(nxt, nxt))
+            i += 2
     return "".join(out)
