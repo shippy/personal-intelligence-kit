@@ -1,4 +1,4 @@
-"""OKF v0.1 bundle helpers for the output/ directory.
+"""OKF v0.2 bundle helpers for the output/ directory.
 
 See _lib/OKF.md for the format spec. Every analysis skill that emits a
 markdown document into output/ should write it via write_concept() so the
@@ -7,7 +7,7 @@ log.md changelog stays current.
 """
 
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +15,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault_config import assert_writable, output_dir  # noqa: E402
 
 RESERVED_SLUGS = {"index", "log"}
+
+# Days after generation at which a concept should be treated as stale (OKF v0.2
+# `stale_after`). Types not listed fall back to FALLBACK_STALE_DAYS.
+DEFAULT_STALE_DAYS = {"alert": 7, "report": 14, "reflection": 30}
+FALLBACK_STALE_DAYS = 14
+
+# Fields write_concept computes itself; passing them through **extra would emit
+# a stale or conflicting shape (v0.1 `status`/flat `sources`).
+_COMPUTED_FIELDS = {"status", "sources", "generated", "stale_after"}
+
+
+def actor(skill: str, model: str | None = None) -> str:
+    """Return the `generated.by` actor: `<skill>/<model>` when an LLM produced
+    the document, else `process:<skill>`."""
+    return f"{skill}/{model}" if model else f"process:{skill}"
 
 
 def _scalar(value: Any) -> str:
@@ -53,17 +68,36 @@ def write_concept(
     type: str,
     title: str,
     body: str,
+    generated_by: str,
     description: str | None = None,
     tags: list[str] | None = None,
     resource: str | None = None,
     timestamp: str | None = None,
+    source_feeds: list[str] | None = None,
+    stale_days: int | None = None,
+    verified: list[dict[str, Any]] | None = None,
     out_dir: Path | None = None,
     **extra: Any,
 ) -> Path:
-    """Write an OKF concept document and return its path."""
+    """Write an OKF concept document and return its path.
+
+    `generated_by` is the actor (see actor()); `source_feeds` are coarse feed
+    names rendered as `sources: [{resource: "source:<feed>"}]`; `stale_days`
+    overrides DEFAULT_STALE_DAYS for this type; `verified` is rendered as given.
+    """
     if slug in RESERVED_SLUGS:
         raise ValueError(f"slug {slug!r} is reserved (index/log)")
-    ts = timestamp or datetime.now().strftime("%Y-%m-%d")
+    if not generated_by or not generated_by.strip():
+        raise ValueError("generated_by must be a non-empty actor string")
+    if stale_days is not None and stale_days < 0:
+        raise ValueError(f"stale_days must not be negative (got {stale_days})")
+    computed = _COMPUTED_FIELDS.intersection(extra)
+    if computed:
+        raise TypeError(f"write_concept computes {sorted(computed)}; do not pass them")
+    now = datetime.now().astimezone()
+    ts = timestamp or now.strftime("%Y-%m-%d")
+    horizon = stale_days if stale_days is not None else DEFAULT_STALE_DAYS.get(type, FALLBACK_STALE_DAYS)
+    feeds = list(dict.fromkeys(source_feeds or []))
     target_dir = assert_writable(Path(out_dir) if out_dir is not None else output_dir(subdir))
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"{slug}.md"
@@ -76,6 +110,10 @@ def write_concept(
         "resource": resource,
         "tags": tags,
         "timestamp": ts,
+        "generated": {"by": generated_by, "at": now.isoformat(timespec="seconds")},
+        "sources": [{"resource": f"source:{feed}"} for feed in feeds] or None,
+        "stale_after": (now + timedelta(days=horizon)).isoformat(timespec="seconds"),
+        "verified": verified,
     }
     fields.update(extra)
     path.write_text(render_frontmatter(fields) + body)
