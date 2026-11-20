@@ -342,6 +342,7 @@ class LLMAssessor:
     """Semantically assess goals against weekly reflections + supplementary signals."""
 
     def __init__(self):
+        self.model_name: Optional[str] = None
         self.model = self._get_model() if _HAS_PYDANTIC_AI else None
 
     @staticmethod
@@ -353,13 +354,15 @@ class LLMAssessor:
     def _get_model(self):
         api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
         if api_key:
+            self.model_name = "claude-sonnet-4-6"
             return AnthropicModel(
-                model_name="claude-sonnet-4-6",
+                model_name=self.model_name,
                 provider=AnthropicProvider(api_key=api_key),
             )
         if api_key := os.getenv("OPENAI_API_KEY"):
+            self.model_name = "gpt-5.4"
             return OpenAIChatModel(
-                model_name="gpt-5.4",
+                model_name=self.model_name,
                 provider=OpenAIProvider(api_key=api_key),
             )
         return None
@@ -651,7 +654,8 @@ def generate_report() -> Optional[Path]:
         out = okf.write_concept(
             "reports", f"intention-reality-{date}", type="report",
             title=f"Intention ↔ Reality Gap Analysis — {date}",
-            body=body, timestamp=date, status="final", tags=["intention-reality"],
+            body=body, timestamp=date, generated_by=okf.actor("intention-reality-gaps"),
+            tags=["intention-reality"],
         )
         print(f"Wrote {out}")
         return out
@@ -660,9 +664,11 @@ def generate_report() -> Optional[Path]:
     goals: List[Goal] = goals_data["goals"]
 
     report = None
+    model_name: Optional[str] = None
     if LLMAssessor.available():
         try:
-            report = LLMAssessor().assess(goals, analyzer)
+            assessor = LLMAssessor()
+            report = assessor.assess(goals, analyzer)
             if report:
                 sources.extend(["reflections", "llm"])
         except Exception as e:
@@ -670,6 +676,7 @@ def generate_report() -> Optional[Path]:
             report = None
 
     if report is not None:
+        model_name = assessor.model_name
         md = _render_llm_report(goals_data, report, date)
         print()
         _print_terse_summary(report)
@@ -689,8 +696,9 @@ def generate_report() -> Optional[Path]:
     out = okf.write_concept(
         "reports", f"intention-reality-{date}", type="report",
         title=f"Intention ↔ Reality Gap Analysis — {date}",
-        body=md, timestamp=date, status="final",
-        sources=sources or None, tags=["intention-reality"],
+        body=md, timestamp=date,
+        generated_by=okf.actor("intention-reality-gaps", model_name),
+        source_feeds=sources, tags=["intention-reality"],
     )
     print(f"Wrote {out}")
 

@@ -216,18 +216,19 @@ class StaleDraftsOrchestrator:
             dense += f"```\n{draft.preview}\n```\n\n---\n\n"
 
         # Save
+        actor = okf.actor("stale-drafts", self.suggester.model_name if self.result and self.suggester else None)
         terse_path = okf.write_concept(
             "alerts", f"stale-drafts-{self.review_date}", type="alert",
             title=f"Draft Queue — {self.review_date}",
             description=f"{len(finish_queue)} finishable drafts",
-            body=terse, timestamp=self.review_date, status="final",
-            sources=list(self.data_sources_used), tags=["drafts"],
+            body=terse, timestamp=self.review_date, generated_by=actor,
+            source_feeds=self.data_sources_used, tags=["drafts"],
         )
         dense_path = okf.write_concept(
             "reports", f"stale-drafts-analysis-{self.review_date}", type="report",
             title=f"Draft Queue Analysis — {self.review_date}",
-            body=dense, timestamp=self.review_date, status="final",
-            sources=list(self.data_sources_used), tags=["drafts"],
+            body=dense, timestamp=self.review_date, generated_by=actor,
+            source_feeds=self.data_sources_used, tags=["drafts"],
         )
         print(f"Saved: {terse_path}")
         print(f"Saved: {dense_path}")
@@ -238,7 +239,7 @@ class StaleDraftsOrchestrator:
             "alerts", f"stale-drafts-{self.review_date}", type="alert",
             title=f"Draft Queue — {self.review_date}",
             body=f"# Draft Queue — {self.review_date}\n\nNo drafts with content found.\n",
-            timestamp=self.review_date, status="final", tags=["drafts"],
+            timestamp=self.review_date, generated_by=okf.actor("stale-drafts"), tags=["drafts"],
         )
         print(f"Saved: {path}")
         return path

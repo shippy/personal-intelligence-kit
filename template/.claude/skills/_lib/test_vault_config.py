@@ -261,7 +261,7 @@ def test_legacy_activity_log(tmp_path, monkeypatch):
 def test_write_concept_refuses_notes_out_dir(tmp_path, monkeypatch):
     notes = _guarded(tmp_path, monkeypatch)
     with pytest.raises(vc.VaultConfigError):
-        okf.write_concept("x", "demo", type="t", title="T", body="b", out_dir=notes / "out")
+        okf.write_concept("x", "demo", generated_by="process:test", type="t", title="T", body="b", out_dir=notes / "out")
     assert not (notes / "out").exists()
 
 
@@ -321,11 +321,11 @@ def test_write_concept_refuses_symlinked_file_and_changelog(tmp_path, monkeypatc
     out.mkdir(parents=True)
     (out / "x.md").symlink_to(victim)
     with pytest.raises(vc.VaultConfigError):
-        okf.write_concept("reports", "x", type="t", title="T", body="b")
+        okf.write_concept("reports", "x", generated_by="process:test", type="t", title="T", body="b")
     (out / "x.md").unlink()
     (tmp_path / "v" / "output" / "log.md").symlink_to(victim)
     with pytest.raises(vc.VaultConfigError):
-        okf.write_concept("reports", "y", type="t", title="T", body="b")
+        okf.write_concept("reports", "y", generated_by="process:test", type="t", title="T", body="b")
     assert victim.read_text() == "keep\n"
 
 

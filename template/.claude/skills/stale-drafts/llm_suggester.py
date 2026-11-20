@@ -22,6 +22,9 @@ from draft_analyzer import Draft, PostedDraft
 from context_enricher import DraftContext
 
 
+MODEL_NAME = "claude-sonnet-4-6"
+
+
 # ── Structured output schemas ──────────────────────────────────────
 
 class DraftAssessment(BaseModel):
@@ -64,12 +67,14 @@ class EnrichedQueueResult(BaseModel):
 # ── Suggester ──────────────────────────────────────────────────────
 
 class LLMSuggester:
+    model_name = MODEL_NAME
+
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY (or CLAUDE_API_KEY) not found.")
         self.provider = AnthropicProvider(api_key=self.api_key)
-        model = AnthropicModel(model_name="claude-sonnet-4-6", provider=self.provider)
+        model = AnthropicModel(model_name=MODEL_NAME, provider=self.provider)
         self.agent = Agent(model=model, output_type=DraftQueueResult, system_prompt=self._pass1_prompt())
 
     @staticmethod
@@ -164,7 +169,7 @@ Guidelines:
         if not pass1.assessments:
             return EnrichedQueueResult(summary="No drafts to re-rank.", assessments=[])
         print(f"\nRe-ranking {len(pass1.assessments)} drafts with context...")
-        model = AnthropicModel(model_name="claude-sonnet-4-6", provider=self.provider)
+        model = AnthropicModel(model_name=MODEL_NAME, provider=self.provider)
         pass2_agent = Agent(model=model, output_type=EnrichedQueueResult, system_prompt=self._pass2_prompt(), retries=3)
         valid = {a.draft_file for a in pass1.assessments}
         context = self._pass2_context(pass1, contexts, drafts)

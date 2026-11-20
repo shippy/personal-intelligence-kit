@@ -21,6 +21,8 @@ def test_convergence_report_is_okf_conformant(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "SerendipityConvergenceAnalyzer", lambda: FakeAnalyzer())
     path = mod.generate_report()
-    assert okf.read_frontmatter(path)["type"] == "report"
+    fm = okf.read_frontmatter(path)
+    assert fm["type"] == "report"
+    assert fm["generated"]["by"] == "process:serendipity-convergence"
     assert (tmp_path / "log.md").exists()
     assert "**Action:** Convergence analysis" in (tmp_path / "activity.md").read_text()

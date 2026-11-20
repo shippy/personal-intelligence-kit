@@ -15,4 +15,8 @@ def test_session_docs_are_okf_conformant(tmp_path, monkeypatch):
     assert len(paths) == 2
     types = {okf.read_frontmatter(p)["type"] for p in paths}
     assert types == {"alert", "report"}
+    for p in paths:
+        fm = okf.read_frontmatter(p)
+        assert fm["generated"]["by"] == "process:session-analyzer"
+        assert fm["sources"] == [{"resource": "source:browser"}]
     assert (tmp_path / "log.md").exists()

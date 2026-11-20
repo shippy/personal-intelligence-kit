@@ -81,12 +81,14 @@ def write_session_docs(active, dormant, cluster_stats, date, dormant_days):
         "alerts", f"session-health-{date}", type="alert",
         title=f"Session Health — {date}",
         description=f"{len(active)} active, {len(dormant)} dormant domain clusters",
-        body=terse_body, timestamp=date, status="final", sources=["browser"], tags=["session-health"],
+        body=terse_body, timestamp=date, generated_by=okf.actor("session-analyzer"),
+        source_feeds=["browser"], tags=["session-health"],
     )
     dense_path = okf.write_concept(
         "reports", f"session-health-{date}", type="report",
         title=f"Session Health Report — {date}",
-        body=dense_body, timestamp=date, status="final", sources=["browser"], tags=["session-health"],
+        body=dense_body, timestamp=date, generated_by=okf.actor("session-analyzer"),
+        source_feeds=["browser"], tags=["session-health"],
     )
     return [terse_path, dense_path]
 
