@@ -411,3 +411,18 @@ def test_rewrites_existing_regular_files(tmp_path, monkeypatch):
     assert "Second" in (tmp_path / "reports" / "r.md").read_text()
     log = (tmp_path / "log.md").read_text()
     assert log.startswith("## 2026-06-20\n* **Update**: Second\n* **Creation**: First\n")
+
+
+def test_descriptor_closed_when_validation_errors(tmp_path, monkeypatch):
+    import errno
+    import os
+
+    def boom(fd):
+        raise OSError(errno.EIO, "I/O error")
+
+    before = len(os.listdir("/dev/fd"))
+    monkeypatch.setattr(okf.os, "fstat", boom)
+    with pytest.raises(OSError):
+        okf._open_for_rewrite(tmp_path / "x.md")
+    monkeypatch.undo()
+    assert len(os.listdir("/dev/fd")) == before

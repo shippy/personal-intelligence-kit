@@ -219,10 +219,13 @@ def _open_for_rewrite(path: Path):
         if e.errno == errno.ELOOP:
             raise ValueError(f"Refusing to write through symlink {path}") from e
         raise
-    if _unsafe(os.fstat(fd)):
-        os.close(fd)
-        raise ValueError(f"Refusing to write {path}: not a regular file with a single link")
-    return os.fdopen(fd, "r+", encoding="utf-8")
+    try:
+        if _unsafe(os.fstat(fd)):
+            raise ValueError(f"Refusing to write {path}: not a regular file with a single link")
+        return os.fdopen(fd, "r+", encoding="utf-8")
+    except BaseException:
+        os.close(fd)  # fdopen never took ownership
+        raise
 
 
 def _write_no_follow(path: Path, text: str) -> None:
