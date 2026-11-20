@@ -426,3 +426,16 @@ def test_descriptor_closed_when_validation_errors(tmp_path, monkeypatch):
         okf._open_for_rewrite(tmp_path / "x.md")
     monkeypatch.undo()
     assert len(os.listdir("/dev/fd")) == before
+
+
+def test_no_double_close_when_fdopen_fails_after_owning(tmp_path, monkeypatch):
+    import os
+    real_close = os.close
+
+    def failing_fdopen(fd, *args, **kwargs):
+        real_close(fd)  # like io.open unwinding after it took ownership
+        raise RuntimeError("wrapper failed")
+
+    monkeypatch.setattr(okf.os, "fdopen", failing_fdopen)
+    with pytest.raises(RuntimeError):  # not masked by EBADF from a second close
+        okf._open_for_rewrite(tmp_path / "x.md")

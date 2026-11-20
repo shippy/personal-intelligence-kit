@@ -220,12 +220,15 @@ def _open_for_rewrite(path: Path):
             raise ValueError(f"Refusing to write through symlink {path}") from e
         raise
     try:
-        if _unsafe(os.fstat(fd)):
-            raise ValueError(f"Refusing to write {path}: not a regular file with a single link")
-        return os.fdopen(fd, "r+", encoding="utf-8")
+        unsafe = _unsafe(os.fstat(fd))
     except BaseException:
-        os.close(fd)  # fdopen never took ownership
+        os.close(fd)
         raise
+    if unsafe:
+        os.close(fd)
+        raise ValueError(f"Refusing to write {path}: not a regular file with a single link")
+    # fdopen owns fd from here and closes it itself if building the wrapper fails.
+    return os.fdopen(fd, "r+", encoding="utf-8")
 
 
 def _write_no_follow(path: Path, text: str) -> None:
