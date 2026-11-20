@@ -12,8 +12,9 @@ import re
 import stat
 import sys
 from datetime import datetime, timedelta
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator, TextIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault_config import assert_writable, output_dir  # noqa: E402
@@ -209,10 +210,12 @@ def _refuse_unsafe_target(path: Path) -> None:
         raise ValueError(f"Refusing to write {path}: not a regular file with a single link")
 
 
-def _open_for_rewrite(path: Path):
+@contextmanager
+def _open_for_rewrite(path: Path) -> Iterator[TextIO]:
     """Open (creating if needed) for read+rewrite without following a final
-    symlink and without truncating, validate the descriptor, then return a
-    text file object positioned at the start."""
+    symlink and without truncating, validate the descriptor, and yield a text
+    file positioned at the start. The raw descriptor is closed exactly once,
+    here, whatever fails (the wrapper never owns it)."""
     try:
         fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)
     except OSError as e:
@@ -220,15 +223,12 @@ def _open_for_rewrite(path: Path):
             raise ValueError(f"Refusing to write through symlink {path}") from e
         raise
     try:
-        unsafe = _unsafe(os.fstat(fd))
-    except BaseException:
+        if _unsafe(os.fstat(fd)):
+            raise ValueError(f"Refusing to write {path}: not a regular file with a single link")
+        with os.fdopen(fd, "r+", encoding="utf-8", closefd=False) as f:
+            yield f
+    finally:
         os.close(fd)
-        raise
-    if unsafe:
-        os.close(fd)
-        raise ValueError(f"Refusing to write {path}: not a regular file with a single link")
-    # fdopen owns fd from here and closes it itself if building the wrapper fails.
-    return os.fdopen(fd, "r+", encoding="utf-8")
 
 
 def _write_no_follow(path: Path, text: str) -> None:

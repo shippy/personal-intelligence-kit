@@ -413,29 +413,43 @@ def test_rewrites_existing_regular_files(tmp_path, monkeypatch):
     assert log.startswith("## 2026-06-20\n* **Update**: Second\n* **Creation**: First\n")
 
 
+def _open_fds():
+    import os
+    return len(os.listdir("/dev/fd"))
+
+
 def test_descriptor_closed_when_validation_errors(tmp_path, monkeypatch):
     import errno
-    import os
 
     def boom(fd):
         raise OSError(errno.EIO, "I/O error")
 
-    before = len(os.listdir("/dev/fd"))
+    before = _open_fds()
     monkeypatch.setattr(okf.os, "fstat", boom)
     with pytest.raises(OSError):
-        okf._open_for_rewrite(tmp_path / "x.md")
+        with okf._open_for_rewrite(tmp_path / "x.md"):
+            pass
     monkeypatch.undo()
-    assert len(os.listdir("/dev/fd")) == before
+    assert _open_fds() == before
 
 
-def test_no_double_close_when_fdopen_fails_after_owning(tmp_path, monkeypatch):
-    import os
-    real_close = os.close
-
+def test_descriptor_closed_once_when_fdopen_fails(tmp_path, monkeypatch):
     def failing_fdopen(fd, *args, **kwargs):
-        real_close(fd)  # like io.open unwinding after it took ownership
         raise RuntimeError("wrapper failed")
 
+    before = _open_fds()
     monkeypatch.setattr(okf.os, "fdopen", failing_fdopen)
-    with pytest.raises(RuntimeError):  # not masked by EBADF from a second close
-        okf._open_for_rewrite(tmp_path / "x.md")
+    with pytest.raises(RuntimeError):  # original error, not EBADF from a second close
+        with okf._open_for_rewrite(tmp_path / "x.md"):
+            pass
+    monkeypatch.undo()
+    assert _open_fds() == before
+
+
+def test_descriptor_closed_when_body_raises(tmp_path):
+    before = _open_fds()
+    with pytest.raises(RuntimeError):
+        with okf._open_for_rewrite(tmp_path / "x.md") as f:
+            f.write("partial")
+            raise RuntimeError("body failed")
+    assert _open_fds() == before
