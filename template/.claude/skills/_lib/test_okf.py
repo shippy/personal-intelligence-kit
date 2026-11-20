@@ -364,3 +364,50 @@ def test_full_iso_timestamp_still_accepted(tmp_path, monkeypatch):
     _bundle(tmp_path, monkeypatch)
     _write("r", timestamp="2026-06-20T10:00:00+00:00")
     assert "## 2026-06-20" in (tmp_path / "log.md").read_text()
+
+
+def test_refuses_hardlinked_concept(tmp_path, monkeypatch):
+    import os
+    _bundle(tmp_path, monkeypatch)
+    victim = tmp_path / "victim.md"
+    victim.write_text("keep")
+    (tmp_path / "reports").mkdir()
+    os.link(victim, tmp_path / "reports" / "r.md")
+    with pytest.raises(ValueError):
+        _write("r")
+    assert victim.read_text() == "keep"
+    assert not (tmp_path / "log.md").exists()
+
+
+def test_refuses_hardlinked_changelog(tmp_path, monkeypatch):
+    import os
+    _bundle(tmp_path, monkeypatch)
+    victim = tmp_path / "victim.md"
+    victim.write_text("keep")
+    os.link(victim, tmp_path / "log.md")
+    with pytest.raises(ValueError):
+        _write("r")
+    assert victim.read_text() == "keep"
+    assert not (tmp_path / "reports" / "r.md").exists()
+
+
+def test_write_time_check_catches_hardlink_after_precheck(tmp_path, monkeypatch):
+    # The pre-write check can be raced; the write itself must still refuse.
+    import os
+    _bundle(tmp_path, monkeypatch)
+    monkeypatch.setattr(okf, "_refuse_unsafe_target", lambda path: None)
+    victim = tmp_path / "victim.md"
+    victim.write_text("keep")
+    os.link(victim, tmp_path / "log.md")
+    with pytest.raises(ValueError):
+        _write("r")
+    assert victim.read_text() == "keep"
+
+
+def test_rewrites_existing_regular_files(tmp_path, monkeypatch):
+    _bundle(tmp_path, monkeypatch)
+    _write("r", title="First", timestamp="2026-06-20")
+    _write("r", title="Second", timestamp="2026-06-20")
+    assert "Second" in (tmp_path / "reports" / "r.md").read_text()
+    log = (tmp_path / "log.md").read_text()
+    assert log.startswith("## 2026-06-20\n* **Update**: Second\n* **Creation**: First\n")

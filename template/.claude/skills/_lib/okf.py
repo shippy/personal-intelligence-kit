@@ -9,6 +9,7 @@ log.md changelog stays current.
 import errno
 import os
 import re
+import stat
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -153,10 +154,10 @@ def write_concept(
     assert_writable(path)  # the file itself may be a symlink planted into the notes vault
     log_root = output_dir("root")
     assert_writable(log_root / "log.md")  # notes-vault guard first: its error is more specific
-    # Then refuse planted symlinks anywhere else, before writing anything, so a
-    # refused changelog can't leave a half-written concept behind.
-    _refuse_symlink(path)
-    _refuse_symlink(log_root / "log.md")
+    # Then refuse planted symlinks/hardlinks anywhere else, before writing
+    # anything, so a refused changelog can't leave a half-written concept behind.
+    _refuse_unsafe_target(path)
+    _refuse_unsafe_target(log_root / "log.md")
     existed = path.exists()
     fields: dict[str, Any] = {
         "type": type,
@@ -189,21 +190,44 @@ def _check_slug(slug: str) -> None:
         raise ValueError(f"slug {slug!r} is reserved (index/log)")
 
 
-def _refuse_symlink(path: Path) -> None:
-    if path.is_symlink():
-        raise ValueError(f"Refusing to write through symlink {path}")
+def _unsafe(st: os.stat_result) -> bool:
+    """A write target must be a regular file with no other hard links: a link
+    planted elsewhere (e.g. into the notes vault) would be overwritten too."""
+    return not stat.S_ISREG(st.st_mode) or st.st_nlink != 1
 
 
-def _write_no_follow(path: Path, text: str) -> None:
-    """Write text, refusing to follow a symlink at the final path component
-    (O_NOFOLLOW closes the race left by an earlier is_symlink() check)."""
+def _refuse_unsafe_target(path: Path) -> None:
+    """Early check, before anything is written. _open_for_rewrite repeats it
+    on the open descriptor, so a race past this check is still refused."""
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+        st = path.lstat()
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(st.st_mode):
+        raise ValueError(f"Refusing to write through symlink {path}")
+    if _unsafe(st):
+        raise ValueError(f"Refusing to write {path}: not a regular file with a single link")
+
+
+def _open_for_rewrite(path: Path):
+    """Open (creating if needed) for read+rewrite without following a final
+    symlink and without truncating, validate the descriptor, then return a
+    text file object positioned at the start."""
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)
     except OSError as e:
         if e.errno == errno.ELOOP:
             raise ValueError(f"Refusing to write through symlink {path}") from e
         raise
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
+    if _unsafe(os.fstat(fd)):
+        os.close(fd)
+        raise ValueError(f"Refusing to write {path}: not a regular file with a single link")
+    return os.fdopen(fd, "r+", encoding="utf-8")
+
+
+def _write_no_follow(path: Path, text: str) -> None:
+    with _open_for_rewrite(path) as f:
+        f.truncate(0)
         f.write(text)
 
 
@@ -219,22 +243,27 @@ def _append_log(root: Path, date: str, kind: str, title: str) -> None:
     root.mkdir(parents=True, exist_ok=True)
     log_path = root / "log.md"
     assert_writable(log_path)
-    _refuse_symlink(log_path)
     if not _DATE.fullmatch(date):
         raise ValueError(f"changelog date must be YYYY-MM-DD (got {date!r})")
     entry = f"* **{kind}**: {_one_line(title)}"
-    existing = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
     heading = f"## {date}"
-    lines = existing.splitlines()
-    if heading in lines:
-        out: list[str] = []
-        for line in lines:
-            out.append(line)
-            if line == heading:
-                out.append(entry)
-        _write_no_follow(log_path, "\n".join(out) + "\n")
-    else:
-        _write_no_follow(log_path, f"{heading}\n{entry}\n\n" + existing)
+    # Read and rewrite through one validated descriptor, so the file read is
+    # the file written (no swap to a symlink between the two).
+    with _open_for_rewrite(log_path) as f:
+        existing = f.read()
+        lines = existing.splitlines()
+        if heading in lines:
+            out: list[str] = []
+            for line in lines:
+                out.append(line)
+                if line == heading:
+                    out.append(entry)
+            new = "\n".join(out) + "\n"
+        else:
+            new = f"{heading}\n{entry}\n\n" + existing
+        f.seek(0)
+        f.truncate()
+        f.write(new)
 
 
 def link(target: str, text: str) -> str:
