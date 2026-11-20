@@ -6,6 +6,8 @@ bundle stays OKF-conformant (frontmatter + non-empty `type`) and the root
 log.md changelog stays current.
 """
 
+import errno
+import os
 import re
 import sys
 from datetime import datetime, timedelta
@@ -16,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault_config import assert_writable, output_dir  # noqa: E402
 
 RESERVED_SLUGS = {"index", "log"}
+_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 # Days after generation at which a concept should be treated as stale (OKF v0.2
 # `stale_after`). Types not listed fall back to FALLBACK_STALE_DAYS.
@@ -130,8 +133,7 @@ def write_concept(
     names rendered as `sources: [{resource: "source:<feed>"}]`; `stale_days`
     overrides DEFAULT_STALE_DAYS for this type; `verified` is rendered as given.
     """
-    if slug in RESERVED_SLUGS:
-        raise ValueError(f"slug {slug!r} is reserved (index/log)")
+    _check_slug(slug)
     if not generated_by or not generated_by.strip():
         raise ValueError("generated_by must be a non-empty actor string")
     if stale_days is not None and stale_days < 0:
@@ -141,12 +143,20 @@ def write_concept(
         raise TypeError(f"write_concept computes {sorted(computed)}; do not pass them")
     now = datetime.now().astimezone()
     ts = timestamp or now.strftime("%Y-%m-%d")
+    if not _DATE.fullmatch(ts[:10]):
+        raise ValueError(f"timestamp must start with YYYY-MM-DD (got {ts!r})")
     horizon = stale_days if stale_days is not None else DEFAULT_STALE_DAYS.get(type, FALLBACK_STALE_DAYS)
     feeds = list(dict.fromkeys(source_feeds or []))
     target_dir = assert_writable(Path(out_dir) if out_dir is not None else output_dir(subdir))
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"{slug}.md"
     assert_writable(path)  # the file itself may be a symlink planted into the notes vault
+    log_root = output_dir("root")
+    assert_writable(log_root / "log.md")  # notes-vault guard first: its error is more specific
+    # Then refuse planted symlinks anywhere else, before writing anything, so a
+    # refused changelog can't leave a half-written concept behind.
+    _refuse_symlink(path)
+    _refuse_symlink(log_root / "log.md")
     existed = path.exists()
     fields: dict[str, Any] = {
         "type": type,
@@ -161,9 +171,47 @@ def write_concept(
         "verified": verified,
     }
     fields.update(extra)
-    path.write_text(render_frontmatter(fields) + body)
-    _append_log(output_dir("root"), ts[:10], "Update" if existed else "Creation", title)
+    _write_no_follow(path, render_frontmatter(fields) + body)
+    _append_log(log_root, ts[:10], "Update" if existed else "Creation", title)
     return path
+
+
+def _check_slug(slug: str) -> None:
+    """A slug must be one safe filename part: no separators, NUL, `.`/`..`,
+    and not a reserved name in any case (macOS volumes are case-insensitive)."""
+    if (
+        not slug
+        or slug in {".", ".."}
+        or any(ch in slug for ch in "/\\\x00")
+    ):
+        raise ValueError(f"slug {slug!r} must be a single filename component")
+    if slug.lower() in RESERVED_SLUGS:
+        raise ValueError(f"slug {slug!r} is reserved (index/log)")
+
+
+def _refuse_symlink(path: Path) -> None:
+    if path.is_symlink():
+        raise ValueError(f"Refusing to write through symlink {path}")
+
+
+def _write_no_follow(path: Path, text: str) -> None:
+    """Write text, refusing to follow a symlink at the final path component
+    (O_NOFOLLOW closes the race left by an earlier is_symlink() check)."""
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise ValueError(f"Refusing to write through symlink {path}") from e
+        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def _one_line(text: str) -> str:
+    """Collapse line breaks and control characters to spaces so text can't add
+    lines to a line-structured file such as log.md."""
+    joined = " ".join(str(text).splitlines())
+    return "".join(" " if ord(ch) < 0x20 or 0x7F <= ord(ch) <= 0x9F else ch for ch in joined)
 
 
 def _append_log(root: Path, date: str, kind: str, title: str) -> None:
@@ -171,8 +219,11 @@ def _append_log(root: Path, date: str, kind: str, title: str) -> None:
     root.mkdir(parents=True, exist_ok=True)
     log_path = root / "log.md"
     assert_writable(log_path)
-    entry = f"* **{kind}**: {title}"
-    existing = log_path.read_text() if log_path.exists() else ""
+    _refuse_symlink(log_path)
+    if not _DATE.fullmatch(date):
+        raise ValueError(f"changelog date must be YYYY-MM-DD (got {date!r})")
+    entry = f"* **{kind}**: {_one_line(title)}"
+    existing = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
     heading = f"## {date}"
     lines = existing.splitlines()
     if heading in lines:
@@ -181,9 +232,9 @@ def _append_log(root: Path, date: str, kind: str, title: str) -> None:
             out.append(line)
             if line == heading:
                 out.append(entry)
-        log_path.write_text("\n".join(out) + "\n")
+        _write_no_follow(log_path, "\n".join(out) + "\n")
     else:
-        log_path.write_text(f"{heading}\n{entry}\n\n" + existing)
+        _write_no_follow(log_path, f"{heading}\n{entry}\n\n" + existing)
 
 
 def link(target: str, text: str) -> str:
