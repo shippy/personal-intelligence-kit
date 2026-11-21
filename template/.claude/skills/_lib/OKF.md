@@ -70,6 +70,18 @@ so overrides such as `[output].reflections` are preserved. Callers can supply
 `out_dir` for an explicit destination. The changelog remains at
 `output_dir("root") / "log.md"`, even when a category lives elsewhere.
 
+Write safety (enforced by `write_concept`):
+
+- A slug must be one filename component (no `/`, `\`, NUL, `.` or `..`) and
+  not `index`/`log` in any letter case.
+- The concept file and `log.md` are never written through a symlink (wherever
+  it points) or a file with other hard links. Both are checked before anything
+  is written, then opened with `O_NOFOLLOW` and checked again on the open
+  descriptor before truncating. `log.md` is read and rewritten through that same
+  descriptor. A symlinked *category directory* is still allowed.
+- `timestamp` must start with `YYYY-MM-DD`. Line breaks and control characters
+  in a title are collapsed to spaces in its changelog entry.
+
 ## Links
 
 Use `okf.link(target, text)` for cross-links between concepts. It produces

@@ -282,3 +282,174 @@ def test_top_level_keys_cannot_inject(tmp_path):
     assert '"null": "y"' in raw
     fm = okf.read_frontmatter(p)
     assert fm == {"type": "t", "ignored\nverified": "x", "null": "y", "a: b": "z"}
+
+
+def _bundle(tmp_path, monkeypatch):
+    monkeypatch.setattr(okf, "output_dir", lambda name="root": tmp_path if name == "root" else tmp_path / name)
+
+
+def _write(slug="r", **kw):
+    kw.setdefault("title", "T")
+    return okf.write_concept("reports", slug, generated_by="process:test", type="report", body="x", **kw)
+
+
+@pytest.mark.parametrize("slug", ["../log", "../../escape", "a/b", "a\\b", "..", ".", "", "x\x00y"])
+def test_slug_must_be_single_safe_component(tmp_path, monkeypatch, slug):
+    _bundle(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        _write(slug)
+    assert not (tmp_path / "log.md").exists()
+    assert list(tmp_path.rglob("*.md")) == []
+
+
+@pytest.mark.parametrize("slug", ["LOG", "Index"])
+def test_reserved_slugs_are_case_insensitive(tmp_path, monkeypatch, slug):
+    _bundle(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        _write(slug)
+
+
+def test_refuses_symlinked_concept_outside_notes(tmp_path, monkeypatch):
+    _bundle(tmp_path, monkeypatch)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep")
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "reports" / "r.md").symlink_to(victim)
+    with pytest.raises(ValueError):
+        _write("r")
+    assert victim.read_text() == "keep"
+    assert not (tmp_path / "log.md").exists()
+
+
+def test_refuses_symlinked_changelog_outside_notes(tmp_path, monkeypatch):
+    _bundle(tmp_path, monkeypatch)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep")
+    (tmp_path / "log.md").symlink_to(victim)
+    with pytest.raises(ValueError):
+        _write("r")
+    assert victim.read_text() == "keep"
+    assert not (tmp_path / "reports" / "r.md").exists()  # nothing half-written
+
+
+def test_symlinked_category_directory_still_allowed(tmp_path, monkeypatch):
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    (tmp_path / "bundle").mkdir()
+    (tmp_path / "bundle" / "reports").symlink_to(real, target_is_directory=True)
+    monkeypatch.setattr(okf, "output_dir",
+                        lambda name="root": tmp_path / "bundle" if name == "root" else tmp_path / "bundle" / name)
+    _write("r")
+    assert (real / "r.md").exists()
+
+
+def test_title_line_breaks_cannot_forge_log_entries(tmp_path, monkeypatch):
+    _bundle(tmp_path, monkeypatch)
+    _write("r", title="x\n## 1999-01-01\r* **Creation**: forged y\x85z\x0b\x1e\x00w", timestamp="2026-06-20")
+    lines = (tmp_path / "log.md").read_text().splitlines()
+    assert [l for l in lines if l.startswith("## ")] == ["## 2026-06-20"]
+    assert len([l for l in lines if l.startswith("* ")]) == 1
+    assert "1999-01-01" in lines[1]  # kept as text on the one entry line
+
+
+@pytest.mark.parametrize("ts", ["garbage", "2026-6-20", "x\n## 1999-01-01"])
+def test_invalid_timestamp_rejected(tmp_path, monkeypatch, ts):
+    _bundle(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        _write("r", timestamp=ts)
+    assert not (tmp_path / "log.md").exists()
+
+
+def test_full_iso_timestamp_still_accepted(tmp_path, monkeypatch):
+    _bundle(tmp_path, monkeypatch)
+    _write("r", timestamp="2026-06-20T10:00:00+00:00")
+    assert "## 2026-06-20" in (tmp_path / "log.md").read_text()
+
+
+def test_refuses_hardlinked_concept(tmp_path, monkeypatch):
+    import os
+    _bundle(tmp_path, monkeypatch)
+    victim = tmp_path / "victim.md"
+    victim.write_text("keep")
+    (tmp_path / "reports").mkdir()
+    os.link(victim, tmp_path / "reports" / "r.md")
+    with pytest.raises(ValueError):
+        _write("r")
+    assert victim.read_text() == "keep"
+    assert not (tmp_path / "log.md").exists()
+
+
+def test_refuses_hardlinked_changelog(tmp_path, monkeypatch):
+    import os
+    _bundle(tmp_path, monkeypatch)
+    victim = tmp_path / "victim.md"
+    victim.write_text("keep")
+    os.link(victim, tmp_path / "log.md")
+    with pytest.raises(ValueError):
+        _write("r")
+    assert victim.read_text() == "keep"
+    assert not (tmp_path / "reports" / "r.md").exists()
+
+
+def test_write_time_check_catches_hardlink_after_precheck(tmp_path, monkeypatch):
+    # The pre-write check can be raced; the write itself must still refuse.
+    import os
+    _bundle(tmp_path, monkeypatch)
+    monkeypatch.setattr(okf, "_refuse_unsafe_target", lambda path: None)
+    victim = tmp_path / "victim.md"
+    victim.write_text("keep")
+    os.link(victim, tmp_path / "log.md")
+    with pytest.raises(ValueError):
+        _write("r")
+    assert victim.read_text() == "keep"
+
+
+def test_rewrites_existing_regular_files(tmp_path, monkeypatch):
+    _bundle(tmp_path, monkeypatch)
+    _write("r", title="First", timestamp="2026-06-20")
+    _write("r", title="Second", timestamp="2026-06-20")
+    assert "Second" in (tmp_path / "reports" / "r.md").read_text()
+    log = (tmp_path / "log.md").read_text()
+    assert log.startswith("## 2026-06-20\n* **Update**: Second\n* **Creation**: First\n")
+
+
+def _open_fds():
+    import os
+    return len(os.listdir("/dev/fd"))
+
+
+def test_descriptor_closed_when_validation_errors(tmp_path, monkeypatch):
+    import errno
+
+    def boom(fd):
+        raise OSError(errno.EIO, "I/O error")
+
+    before = _open_fds()
+    monkeypatch.setattr(okf.os, "fstat", boom)
+    with pytest.raises(OSError):
+        with okf._open_for_rewrite(tmp_path / "x.md"):
+            pass
+    monkeypatch.undo()
+    assert _open_fds() == before
+
+
+def test_descriptor_closed_once_when_fdopen_fails(tmp_path, monkeypatch):
+    def failing_fdopen(fd, *args, **kwargs):
+        raise RuntimeError("wrapper failed")
+
+    before = _open_fds()
+    monkeypatch.setattr(okf.os, "fdopen", failing_fdopen)
+    with pytest.raises(RuntimeError):  # original error, not EBADF from a second close
+        with okf._open_for_rewrite(tmp_path / "x.md"):
+            pass
+    monkeypatch.undo()
+    assert _open_fds() == before
+
+
+def test_descriptor_closed_when_body_raises(tmp_path):
+    before = _open_fds()
+    with pytest.raises(RuntimeError):
+        with okf._open_for_rewrite(tmp_path / "x.md") as f:
+            f.write("partial")
+            raise RuntimeError("body failed")
+    assert _open_fds() == before
