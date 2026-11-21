@@ -69,8 +69,13 @@ Channel gmail
 Far :gmail-remote:
 Near :gmail-local:
 Patterns "INBOX" "[Gmail]/Sent Mail" "[Gmail]/All Mail"
-Create Both
-Expunge Both
+# Read-only mirror: changes flow from the server to the local archive only; nothing local
+# (deletions, flags, new folders) is ever written back. Messages deleted on the server stay
+# in the archive, flagged as trashed (Expunge None).
+Sync Pull
+Create Near
+Remove None
+Expunge None
 SyncState *
 
 # IMPORTANT: Limit initial sync to the most recent 1000 messages.
