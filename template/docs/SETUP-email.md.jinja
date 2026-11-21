@@ -21,6 +21,8 @@ brew install isync notmuch   # macOS
 apt install isync notmuch    # Debian/Ubuntu
 ```
 
+The config below needs **isync 1.5 or later** (`mbsync --version`): it uses `TLSType` and `--pull-old`, which 1.4 doesn't know. Homebrew ships 1.5; older Debian/Ubuntu releases may still package 1.4.
+
 ## Credential Storage
 
 Pick one:
@@ -68,8 +70,9 @@ Create Near
 Remove None
 Expunge None
 SyncState *
-# Limit the initial sync to the most recent 1000 messages per mailbox (no blank line above:
-# an empty line ends the Channel section). ExpireUnread yes keeps a mostly-unread mailbox from
+# Keep roughly the 1000 latest-arriving messages per mailbox for the initial sync (approximate:
+# selection is by arrival order, and flagged messages are always kept). No blank line above:
+# an empty line ends the Channel section. ExpireUnread yes keeps a mostly-unread mailbox from
 # aborting with "Please set ExpireUnread". To fetch older mail later, see below.
 MaxMessages 1000
 ExpireUnread yes
@@ -79,7 +82,7 @@ ExpireUnread yes
 
 ```bash
 mkdir -p {{ email_path }}
-mbsync -a            # pulls ~1000 recent messages
+mbsync -a            # pulls about 1000 messages per mailbox
 notmuch setup        # interactive: name, email, database path = {{ email_path }}
 notmuch new          # index downloaded messages
 ```

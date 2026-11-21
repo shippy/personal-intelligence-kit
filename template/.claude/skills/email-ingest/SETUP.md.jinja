@@ -14,6 +14,8 @@ brew install isync notmuch
 apt install isync notmuch
 ```
 
+The config below needs **isync 1.5 or later** (`mbsync --version`): it uses `TLSType` and `--pull-old`, which 1.4 doesn't know. Homebrew ships 1.5; older Debian/Ubuntu releases may still package 1.4.
+
 ## 2. Generate an app-specific password (Gmail)
 
 Normal Gmail passwords don't work with IMAP. Generate an app password:
@@ -77,8 +79,9 @@ Create Near
 Remove None
 Expunge None
 SyncState *
-# Limit the initial sync to the most recent 1000 messages per mailbox (no blank line above:
-# an empty line ends the Channel section). ExpireUnread yes keeps a mostly-unread mailbox from
+# Keep roughly the 1000 latest-arriving messages per mailbox for the initial sync (approximate:
+# selection is by arrival order, and flagged messages are always kept). No blank line above:
+# an empty line ends the Channel section. ExpireUnread yes keeps a mostly-unread mailbox from
 # aborting with "Please set ExpireUnread". To fetch older mail later, see below.
 MaxMessages 1000
 ExpireUnread yes
@@ -93,7 +96,7 @@ mkdir -p {{ email_path }}
 mbsync -a
 ```
 
-This downloads the most recent 1000 messages to `{{ email_path }}`. It may take several minutes.
+This downloads about 1000 messages per mailbox (by arrival order, plus any flagged ones) to `{{ email_path }}`. It may take several minutes.
 
 ## 6. Initialize notmuch
 
