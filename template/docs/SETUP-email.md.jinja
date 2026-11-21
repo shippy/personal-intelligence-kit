@@ -68,7 +68,11 @@ Create Near
 Remove None
 Expunge None
 SyncState *
-MaxMessages 1000   # <-- limit initial sync; remove later
+# Limit the initial sync to the most recent 1000 messages per mailbox (no blank line above:
+# an empty line ends the Channel section). ExpireUnread yes keeps a mostly-unread mailbox from
+# aborting with "Please set ExpireUnread". To fetch older mail later, see below.
+MaxMessages 1000
+ExpireUnread yes
 ```
 
 ## First Sync
@@ -100,7 +104,9 @@ uv run .claude/skills/data-sync/sync_all.py --yes
 
 ## Removing MaxMessages
 
-Once you're comfortable, edit `~/.mbsyncrc` and comment out the `MaxMessages` line. The next sync will pull older mail.
+Once you're comfortable, edit `~/.mbsyncrc` and comment out the `MaxMessages` and `ExpireUnread` lines, then
+fetch the older mail once with `mbsync --pull-old -a`. A plain sync won't: messages skipped by `MaxMessages` are only
+fetched by the explicit `Old` operation, which `Sync Pull` doesn't include.
 
 ## Common Issues
 

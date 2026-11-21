@@ -77,10 +77,11 @@ Create Near
 Remove None
 Expunge None
 SyncState *
-
-# IMPORTANT: Limit initial sync to the most recent 1000 messages.
-# Remove or increase this once you're comfortable.
+# Limit the initial sync to the most recent 1000 messages per mailbox (no blank line above:
+# an empty line ends the Channel section). ExpireUnread yes keeps a mostly-unread mailbox from
+# aborting with "Please set ExpireUnread". To fetch older mail later, see below.
 MaxMessages 1000
+ExpireUnread yes
 ```
 
 Replace `YOUR_EMAIL@gmail.com` with your address throughout.
@@ -134,5 +135,7 @@ Running `data-sync` (or this skill directly) will re-run `mbsync -a && notmuch n
 Once you're comfortable and want full history, edit `~/.mbsyncrc` and comment out:
 ```ini
 # MaxMessages 1000
+# ExpireUnread yes
 ```
-Then re-run `mbsync -a`. The next sync will pull older mail.
+Then fetch the older mail once with `mbsync --pull-old -a`. A plain `mbsync -a` won't: messages skipped by
+`MaxMessages` are only fetched by the explicit `Old` operation, which `Sync Pull` doesn't include.
