@@ -93,7 +93,8 @@ def test_single_dir_settings(single):
     assert not {"Bash(python3:*)", "Bash(cat:*)", "Bash(find:*)"} & set(settings["allow"])
     assert "Bash(uv run:*)" not in settings["allow"]
     assert "Bash(uv run .claude/skills/data-sync/sync_all.py:*)" in settings["allow"]
-    assert not any("add_tasks.py" in rule or "fal_image.py" in rule for rule in settings["allow"])
+    assert not any(s in rule for rule in settings["allow"]
+                   for s in ("add_tasks.py", "fal_image.py", "intention_reality_gaps.py", "generate_report.py"))
     for rule in settings["allow"]:
         if rule.startswith("Bash(uv run "):
             path = rule.removeprefix("Bash(uv run ").removesuffix(":*)")

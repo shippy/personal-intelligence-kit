@@ -8,11 +8,10 @@
       "Bash(grep:*)",
 {#- Only skill scripts that read local data, sync your own sources or write local reports are pre-allowed,
     called by repo-relative path from the vault root. Everything else that goes through `uv run` (ad-hoc
-    Python, add_tasks.py, which writes to To Do, paid image generation, one-off migrations) gets the
-    normal permission check. #}
+    Python, add_tasks.py, which writes to To Do, paid image generation, one-off migrations, and
+    intention_reality_gaps.py / generate_report.py, which send personal data to an LLM API whenever an API
+    key is in the environment) gets the normal permission check. #}
       "Bash(uv run .claude/skills/data-sync/sync_all.py:*)",
-      "Bash(uv run .claude/skills/cross-source-queries/generate_report.py:*)",
-      "Bash(uv run .claude/skills/cross-source-queries/intention_reality_gaps.py:*)",
       "Bash(uv run .claude/skills/cross-source-queries/commitment_accountability.py:*)",
       "Bash(uv run .claude/skills/cross-source-queries/serendipity_convergence.py:*)",
       "Bash(uv run .claude/skills/_lib/activity.py:*)",
