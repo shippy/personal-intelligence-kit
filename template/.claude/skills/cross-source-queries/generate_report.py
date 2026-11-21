@@ -10,7 +10,7 @@ Runs all three analyses (intention-reality, commitments, convergence)
 and produces a combined report.
 
 Usage:
-    uv run generate_report.py
+    uv run .claude/skills/cross-source-queries/generate_report.py
 """
 
 import sys

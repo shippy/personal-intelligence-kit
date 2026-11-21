@@ -11,8 +11,8 @@ and computes health metrics per day / domain cluster. A simplified analysis
 that works across all Chromium browsers.
 
 Usage:
-    uv run analyze.py
-    uv run analyze.py --dormant-days 14
+    uv run .claude/skills/session-analyzer/analyze.py
+    uv run .claude/skills/session-analyzer/analyze.py --dormant-days 14
 """
 
 from __future__ import annotations

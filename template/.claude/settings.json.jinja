@@ -6,7 +6,33 @@
       "Bash(ls:*)",
       "Bash(tree:*)",
       "Bash(grep:*)",
-      "Bash(uv run:*)",
+{#- Only skill scripts that read local data, sync your own sources or write local reports are pre-allowed,
+    called by repo-relative path from the vault root. Everything else that goes through `uv run` (ad-hoc
+    Python, add_tasks.py, which writes to To Do, paid image generation, one-off migrations) gets the
+    normal permission check. #}
+      "Bash(uv run .claude/skills/data-sync/sync_all.py:*)",
+      "Bash(uv run .claude/skills/cross-source-queries/generate_report.py:*)",
+      "Bash(uv run .claude/skills/cross-source-queries/intention_reality_gaps.py:*)",
+      "Bash(uv run .claude/skills/cross-source-queries/commitment_accountability.py:*)",
+      "Bash(uv run .claude/skills/cross-source-queries/serendipity_convergence.py:*)",
+      "Bash(uv run .claude/skills/_lib/activity.py:*)",
+{%- if enable_email %}
+      "Bash(uv run .claude/skills/email-ingest/ingest.py:*)",
+      "Bash(uv run .claude/skills/email-analyzer/query.py:*)",
+{%- endif %}
+{%- if enable_browser %}
+      "Bash(uv run .claude/skills/browser-ingest/ingest.py:*)",
+      "Bash(uv run .claude/skills/session-analyzer/analyze.py:*)",
+{%- endif %}
+{%- if enable_journal %}
+      "Bash(uv run .claude/skills/journal-ingest/ingest.py:*)",
+{%- endif %}
+{%- if enable_tasks %}
+      "Bash(uv run .claude/skills/tasks-import/import_tasks.py:*)",
+{%- endif %}
+{%- if enable_git %}
+      "Bash(uv run .claude/skills/git-stats/ingest.py:*)",
+{%- endif %}
       "Bash(uv sync:*)",
       "Bash(sqlite3:*)",
       "Bash(terminal-notifier:*)",

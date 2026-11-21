@@ -10,7 +10,7 @@ Detects topics and people appearing across multiple disconnected data sources.
 Surfaces emerging interests, intensifying relationships, and unexpected convergences.
 
 Usage:
-    uv run serendipity_convergence.py
+    uv run .claude/skills/cross-source-queries/serendipity_convergence.py
 """
 
 import re

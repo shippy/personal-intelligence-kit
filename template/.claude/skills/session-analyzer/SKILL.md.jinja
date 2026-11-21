@@ -15,10 +15,9 @@ Health checks {{ owner_name }}'s browser tab workspaces. Flags:
 ## Invocation
 
 ```bash
-cd .claude/skills/session-analyzer
-uv run analyze.py                    # Full health check
-uv run analyze.py --workspace "Work" # Specific workspace
-uv run analyze.py --dormant-weeks 2  # Adjust dormancy threshold
+uv run .claude/skills/session-analyzer/analyze.py                    # Full health check
+uv run .claude/skills/session-analyzer/analyze.py --workspace "Work" # Specific workspace
+uv run .claude/skills/session-analyzer/analyze.py --dormant-weeks 2  # Adjust dormancy threshold
 ```
 
 Or via Claude Code: `session: health`

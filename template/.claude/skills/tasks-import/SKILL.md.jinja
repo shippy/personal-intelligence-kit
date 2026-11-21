@@ -18,9 +18,8 @@ Configured via `vault.toml` → `sources.tasks.provider`. Current value: **{{ ta
 ## Invocation
 
 ```bash
-cd .claude/skills/tasks-import
-uv run import_tasks.py              # Incremental sync
-uv run import_tasks.py --full       # Full re-import
+uv run .claude/skills/tasks-import/import_tasks.py         # Incremental sync
+uv run .claude/skills/tasks-import/import_tasks.py --full  # Full re-import
 ```
 
 ## What It Does
@@ -86,12 +85,11 @@ Requires Full Disk Access for Terminal.app on recent macOS.
 `add_tasks.py` adds new tasks to an existing To Do list, for example the follow-ups at the end of a session. It is create-only: it cannot update, complete or delete a task, and never creates, renames or deletes a list. No reminders, due dates or recurrence.
 
 ```bash
-cd .claude/skills/tasks-import
-uv run add_tasks.py --lists                                  # list names (read-only)
-uv run add_tasks.py --list Social "Text Viktor" "Suggest a coffee time to Lepka"   # preview
-uv run add_tasks.py --list Social --file tasks.txt           # one title per line, blank lines ignored
-uv run add_tasks.py --list Social --file tasks.txt --yes     # actually create them
-uv run add_tasks.py --list Social --file tasks.txt --note "[[2026-11-16 briefing]]" --yes  # link back
+uv run .claude/skills/tasks-import/add_tasks.py --lists                                                                # list names (read-only)
+uv run .claude/skills/tasks-import/add_tasks.py --list Social "Text Viktor" "Suggest a coffee time to Lepka"           # preview
+uv run .claude/skills/tasks-import/add_tasks.py --list Social --file tasks.txt                                         # one title per line, blank lines ignored
+uv run .claude/skills/tasks-import/add_tasks.py --list Social --file tasks.txt --yes                                   # actually create them
+uv run .claude/skills/tasks-import/add_tasks.py --list Social --file tasks.txt --note "[[2026-11-16 briefing]]" --yes  # link back
 ```
 
 - **Preview is the default.** Without `--yes` it prints the list, each title and what it would skip, and writes nothing. Show {{ owner_name }} the preview and create only after they agree.
@@ -107,10 +105,10 @@ uv run add_tasks.py --list Social --file tasks.txt --note "[[2026-11-16 briefing
 Writing needs its own sign-in with the `Tasks.ReadWrite` scope. {{ owner_name }} runs this once, interactively, on the host:
 
 ```bash
-uv run add_tasks.py --test-auth
+uv run .claude/skills/tasks-import/add_tasks.py --test-auth
 ```
 
-It uses a separate token cache (`pik-todo-write`) and auth record (`ms_auth_record_write.json` in the state directory), so the nightly read sync keeps its own `Tasks.Read` cache and record. Every other mode fails fast with "run `uv run add_tasks.py --test-auth` first" instead of prompting, so an agent never hangs on a device-code prompt nobody sees. The first run with a new uv Python may trigger a macOS Keychain dialog for the token cache: choose **Always Allow**.
+It uses a separate token cache (`pik-todo-write`) and auth record (`ms_auth_record_write.json` in the state directory), so the nightly read sync keeps its own `Tasks.Read` cache and record. Every other mode fails fast with "run `uv run .claude/skills/tasks-import/add_tasks.py --test-auth` first" instead of prompting, so an agent never hangs on a device-code prompt nobody sees. The first run with a new uv Python may trigger a macOS Keychain dialog for the token cache: choose **Always Allow**.
 
 **Consent caveat:** consent is granted per app and per account. Granting `Tasks.ReadWrite` to the Microsoft Graph CLI app means a refresh token from the read cache could in principle request write access too. The separate caches keep the sync job independent; they are not a privilege boundary.
 

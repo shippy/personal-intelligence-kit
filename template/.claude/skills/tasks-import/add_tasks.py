@@ -11,11 +11,11 @@ task, and never creates, renames or deletes a list. Preview is the default;
 nothing is written without --yes.
 
 Usage:
-    uv run add_tasks.py --list Social "Text Viktor" "Suggest a coffee time"
-    uv run add_tasks.py --list Social --file tasks.txt        # one title per line
-    uv run add_tasks.py --list Social --file tasks.txt --yes  # actually create them
-    uv run add_tasks.py --test-auth                           # one-time interactive sign-in
-    uv run add_tasks.py --lists                               # print list names (read-only)
+    uv run .claude/skills/tasks-import/add_tasks.py --list Social "Text Viktor" "Suggest a coffee time"
+    uv run .claude/skills/tasks-import/add_tasks.py --list Social --file tasks.txt        # one title per line
+    uv run .claude/skills/tasks-import/add_tasks.py --list Social --file tasks.txt --yes  # actually create them
+    uv run .claude/skills/tasks-import/add_tasks.py --test-auth                           # one-time interactive sign-in
+    uv run .claude/skills/tasks-import/add_tasks.py --lists                               # print list names (read-only)
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ WRITE_CACHE = "pik-todo-write"
 WRITE_RECORD = "ms_auth_record_write.json"
 MAX_TITLE = 255
 MAX_BATCH = 50
-AUTH_HINT = "run `uv run add_tasks.py --test-auth` first"
+AUTH_HINT = "run `uv run .claude/skills/tasks-import/add_tasks.py --test-auth` first"
 OPEN_FILTER = "$filter=" + quote("status ne 'completed'", safe="'")
 
 

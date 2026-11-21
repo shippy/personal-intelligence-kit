@@ -10,8 +10,8 @@ Parses journal entries into a SQLite database. Supports rosebud, dayone (JSON),
 and plain markdown formats. Configured via vault.toml → sources.journal.type.
 
 Usage:
-    uv run ingest.py
-    uv run ingest.py --rebuild
+    uv run .claude/skills/journal-ingest/ingest.py
+    uv run .claude/skills/journal-ingest/ingest.py --rebuild
 """
 
 from __future__ import annotations

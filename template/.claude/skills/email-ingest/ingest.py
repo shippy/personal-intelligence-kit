@@ -9,7 +9,7 @@ Email Ingest — mbsync + notmuch
 Calls mbsync to sync IMAP mailboxes, then notmuch to index.
 
 Usage:
-    uv run ingest.py
+    uv run .claude/skills/email-ingest/ingest.py
 """
 
 from __future__ import annotations

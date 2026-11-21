@@ -10,11 +10,11 @@ Thin wrapper over `notmuch search`/`notmuch show` with filters for
 human-readable messages (vs bulk/newsletter noise).
 
 Usage:
-    uv run query.py "date:7d.. tag:sent"
-    uv run query.py --recent 20
-    uv run query.py --from "alice@example.com"
-    uv run query.py --human date:7d..
-    uv run query.py --stats
+    uv run .claude/skills/email-analyzer/query.py "date:7d.. tag:sent"
+    uv run .claude/skills/email-analyzer/query.py --recent 20
+    uv run .claude/skills/email-analyzer/query.py --from "alice@example.com"
+    uv run .claude/skills/email-analyzer/query.py --human date:7d..
+    uv run .claude/skills/email-analyzer/query.py --stats
 """
 
 from __future__ import annotations

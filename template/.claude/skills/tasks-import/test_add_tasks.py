@@ -221,7 +221,7 @@ def identity(vault, monkeypatch):
 @pytest.mark.parametrize("argv", [["--list", "Social", "x", "--yes"], ["--list", "Social", "x"], ["--lists"]])
 def test_refuses_to_prompt_without_write_record(identity, capsys, argv):
     assert add.main(argv) == 1
-    assert "run `uv run add_tasks.py --test-auth` first" in capsys.readouterr().out
+    assert "run `uv run .claude/skills/tasks-import/add_tasks.py --test-auth` first" in capsys.readouterr().out
     assert identity.created == [] and identity.authenticated == []
 
 

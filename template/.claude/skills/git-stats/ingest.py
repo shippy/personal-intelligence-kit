@@ -10,10 +10,10 @@ Scans git repositories in configured superdirectories and records commit
 stats (author, lines changed, co-authors) to data/git-commits.db.
 
 Usage:
-    uv run ingest.py                    # Last 7 days
-    uv run ingest.py --since 2026-03-01
-    uv run ingest.py --since 2026-03-01 --until 2026-04-01
-    uv run ingest.py --all
+    uv run .claude/skills/git-stats/ingest.py                    # Last 7 days
+    uv run .claude/skills/git-stats/ingest.py --since 2026-03-01
+    uv run .claude/skills/git-stats/ingest.py --since 2026-03-01 --until 2026-04-01
+    uv run .claude/skills/git-stats/ingest.py --all
 """
 
 from __future__ import annotations
