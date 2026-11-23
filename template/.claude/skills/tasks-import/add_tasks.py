@@ -6,13 +6,21 @@
 """
 Add tasks to Microsoft To Do (create only).
 
-Creates new tasks in an existing list. It cannot update, complete or delete a
-task, and never creates, renames or deletes a list. Preview is the default;
-nothing is written without --yes.
+Creates new tasks in an existing list, optionally with steps (checklist items).
+It cannot update, complete or delete a task, and never creates, renames or
+deletes a list. Preview is the default; nothing is written without --yes.
+
+In a --file, each unindented line is a task and each indented line under it is
+one of that task's steps:
+
+    Pack for the talk
+        Laptop charger
+        HDMI adapter
+    Text Viktor
 
 Usage:
     uv run add_tasks.py --list Social "Text Viktor" "Suggest a coffee time"
-    uv run add_tasks.py --list Social --file tasks.txt        # one title per line
+    uv run add_tasks.py --list Social --file tasks.txt        # tasks, indented steps
     uv run add_tasks.py --list Social --file tasks.txt --yes  # actually create them
     uv run add_tasks.py --test-auth                           # one-time interactive sign-in
     uv run add_tasks.py --lists                               # print list names (read-only)
@@ -23,6 +31,7 @@ from __future__ import annotations
 import argparse
 import sys
 import unicodedata
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from urllib.parse import quote
@@ -37,12 +46,29 @@ WRITE_CACHE = "pik-todo-write"
 WRITE_RECORD = "ms_auth_record_write.json"
 MAX_TITLE = 255
 MAX_BATCH = 50
+MAX_STEPS = 20          # per task
+MAX_STEPS_TOTAL = 100   # per run
 AUTH_HINT = "run `uv run add_tasks.py --test-auth` first"
 OPEN_FILTER = "$filter=" + quote("status ne 'completed'", safe="'")
 
 
 class UsageError(Exception):
     pass
+
+
+@dataclass
+class Task:
+    title: str
+    steps: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Failure:
+    """Where a run stopped. `step` is None when the task itself wasn't created."""
+    task: Task
+    error: Exception
+    step: str | None = None
+    steps_added: int = 0
 
 
 class NotSignedIn(Exception):
@@ -107,19 +133,36 @@ def _key(title: str) -> str:
     return title.strip().casefold()
 
 
+def _check_text(text: str, label: str) -> str:
+    """Stripped `text`, or UsageError if it is empty, too long or unsafe."""
+    t = text.strip()
+    if not t:
+        raise UsageError(f"{label} must not be empty")
+    if len(t) > MAX_TITLE:
+        raise UsageError(f"{label} longer than {MAX_TITLE} characters: {display(t[:40])!r}...")
+    if any(_unsafe_char(c) for c in t):
+        raise UsageError(f"{label} contains a control or bidi character: {display(t[:40])!r}")
+    return t
+
+
 def validate_titles(titles: list[str]) -> list[str]:
-    cleaned = [t.strip() for t in titles]
-    if not cleaned:
+    if not titles:
         raise UsageError("No task titles given")
-    if len(cleaned) > MAX_BATCH:
-        raise UsageError(f"Too many tasks: {len(cleaned)} (max {MAX_BATCH} per run)")
-    for t in cleaned:
-        if not t:
-            raise UsageError("Task titles must not be empty")
-        if len(t) > MAX_TITLE:
-            raise UsageError(f"Title longer than {MAX_TITLE} characters: {t[:40]!r}...")
-        if any(_unsafe_char(c) for c in t):
-            raise UsageError(f"Title contains a control or bidi character: {display(t[:40])!r}")
+    if len(titles) > MAX_BATCH:
+        raise UsageError(f"Too many tasks: {len(titles)} (max {MAX_BATCH} per run)")
+    return [_check_text(t, "Title") for t in titles]
+
+
+def validate_tasks(tasks: list[Task]) -> list[Task]:
+    titles = validate_titles([t.title for t in tasks])
+    total = sum(len(t.steps) for t in tasks)
+    if total > MAX_STEPS_TOTAL:
+        raise UsageError(f"Too many steps: {total} (max {MAX_STEPS_TOTAL} per run)")
+    cleaned = []
+    for title, task in zip(titles, tasks):
+        if len(task.steps) > MAX_STEPS:
+            raise UsageError(f"Too many steps under {title!r}: {len(task.steps)} (max {MAX_STEPS})")
+        cleaned.append(Task(title, [_check_text(s, "Step") for s in task.steps]))
     return cleaned
 
 
@@ -129,12 +172,12 @@ def open_task_titles(credential, list_id: str) -> set[str]:
     return {_key(t.get("title", "")) for t in tasks}
 
 
-def plan(titles: list[str], existing: set[str]) -> tuple[list[str], list[tuple[str, str]]]:
-    """Split titles into (to create, [(skipped title, reason)])."""
+def plan(tasks: list[Task], existing: set[str]) -> tuple[list[Task], list[tuple[Task, str]]]:
+    """Split tasks into (to create, [(skipped task, reason)]). A skipped task's steps go with it."""
     seen = set()
     create, skipped = [], []
-    for t in titles:
-        k = _key(t)
+    for t in tasks:
+        k = _key(t.title)
         if k in existing:
             skipped.append((t, "already an open task in this list"))
         elif k in seen:
@@ -150,19 +193,32 @@ def provenance(note: str | None, today: date | None = None) -> str:
     return f"{text}\n{note}" if note else text
 
 
-def create_tasks(credential, list_id: str, titles: list[str], body: str):
-    """POST each title in order; stop at the first failure.
+def create_tasks(credential, list_id: str, tasks: list[Task], body: str):
+    """POST each task, then each of its steps, in order; stop at the first failure.
 
-    Returns (created, failure) where failure is None or (title, error).
+    Returns (created, failure): `created` holds the tasks created with all their
+    steps, `failure` is None or a Failure. A task whose step failed was created,
+    with `steps_added` of its steps, and is in the Failure, not in `created`.
     """
     endpoint = f"/me/todo/lists/{quote(list_id, safe='')}/tasks"
     created = []
-    for t in titles:
-        payload = {"title": t, "body": {"contentType": "text", "content": body}}
+    for t in tasks:
+        payload = {"title": t.title, "body": {"contentType": "text", "content": body}}
         try:
-            todo._ms_graph_post(credential, endpoint, payload, scope=WRITE_SCOPE)
+            response = todo._ms_graph_post(credential, endpoint, payload, scope=WRITE_SCOPE)
         except Exception as exc:  # report and stop; never retry a POST blindly
-            return created, (t, exc)
+            return created, Failure(t, exc)
+        if t.steps:
+            task_id = response.get("id") if isinstance(response, dict) else None
+            if not isinstance(task_id, str) or not task_id:
+                return created, Failure(t, RuntimeError("Graph returned no task id"), t.steps[0])
+            steps_endpoint = f"{endpoint}/{quote(task_id, safe='')}/checklistItems"
+            for i, step in enumerate(t.steps):
+                try:
+                    todo._ms_graph_post(credential, steps_endpoint, {"displayName": step},
+                                        scope=WRITE_SCOPE)
+                except Exception as exc:
+                    return created, Failure(t, exc, step, steps_added=i)
         created.append(t)
     return created, None
 
@@ -176,22 +232,45 @@ def md_text(text: str) -> str:
     return "".join(f"\\{c}" if c in _MD_SPECIAL else c for c in text)
 
 
-def log_activity(list_name: str, created: list[str], failed: str | None) -> None:
+def _with_steps(task: Task) -> str:
+    n = len(task.steps)
+    return md_text(task.title) + (f" ({n} step{'s' if n != 1 else ''})" if n else "")
+
+
+def _failure_text(failure: Failure) -> str:
+    if failure.step is None:
+        return md_text(failure.task.title)
+    return (f"{md_text(failure.task.title)} (task created with {failure.steps_added} of "
+            f"{len(failure.task.steps)} steps; failed on step {md_text(failure.step)})")
+
+
+def log_activity(list_name: str, created: list[Task], failure: Failure | None) -> None:
     """Append one entry to the monthly activity log. Untrusted text is escaped first."""
     fields = {
         "List": md_text(list_name),
-        "Created": [md_text(t) for t in created],
-        "Stopped at failure": md_text(failed) if failed is not None else None,
+        "Created": [_with_steps(t) for t in created],
+        "Stopped at failure": _failure_text(failure) if failure is not None else None,
     }
     append_activity(f"Tasks added to Microsoft To Do ({len(created)})", fields)
 
 
-def read_titles(args) -> list[str]:
-    titles = list(args.titles)
+def read_tasks(args) -> list[Task]:
+    """Positional titles, then the file's tasks; an indented file line is a step of the task above."""
+    tasks = [Task(t) for t in args.titles]
     if args.file:
+        from_file: list[Task] = []
         text = Path(args.file).read_text(encoding="utf-8")
-        titles += [line for line in text.splitlines() if line.strip()]
-    return titles
+        for n, line in enumerate(text.splitlines(), 1):
+            if not line.strip():
+                continue
+            if line[0].isspace():
+                if not from_file:
+                    raise UsageError(f"Line {n} of {args.file} is indented (a step) but no task comes before it")
+                from_file[-1].steps.append(line)
+            else:
+                from_file.append(Task(line))
+        tasks += from_file
+    return tasks
 
 
 def sign_in() -> int:
@@ -208,19 +287,43 @@ def sign_in() -> int:
     return 0
 
 
+def report_failure(failure: Failure, not_created: list[Task]) -> None:
+    task = failure.task
+    if failure.step is None:
+        print(f"Failed on {task.title!r}: {failure.error}")
+        print("  It may still have been created if the request timed out; check To Do before rerunning.")
+    else:
+        print(f"{task.title!r} was created, but only {failure.steps_added} of {len(task.steps)} "
+              f"steps were added. Failed on step {failure.step!r}: {failure.error}")
+        print("  That step may still have been added if the request timed out.")
+        print("  A rerun skips this task because it is now open: add the missing steps in To Do,")
+        print("  or delete the task there and rerun.")
+        print("Steps not added:")
+        for s in task.steps[failure.steps_added:]:
+            print(f"  - {s}")
+    if not_created:
+        print("Not created:")
+        for t in not_created:
+            print(f"  - {t.title}")
+
+
 def run(args) -> int:
-    titles = validate_titles(read_titles(args))
+    tasks = validate_tasks(read_tasks(args))
     credential, lists = connect()
     target = match_list(lists, args.list)
     list_name = target.get("displayName", "")
-    to_create, skipped = plan(titles, open_task_titles(credential, target["id"]))
+    to_create, skipped = plan(tasks, open_task_titles(credential, target["id"]))
 
     mode = "Creating" if args.yes else "Preview (nothing written; add --yes to create)"
     print(f"{mode}: list {display(list_name)!r}")
     for t in to_create:
-        print(f"  + {t}")
+        print(f"  + {t.title}")
+        for s in t.steps:
+            print(f"      [ ] {s}")
     for t, reason in skipped:
-        print(f"  - skip {t!r}: {reason}")
+        n = len(t.steps)
+        steps = f" (and its {n} step{'s' if n != 1 else ''})" if n else ""
+        print(f"  - skip {t.title!r}{steps}: {reason}")
     if not args.yes:
         return 0
     if not to_create:
@@ -228,17 +331,13 @@ def run(args) -> int:
         return 0
 
     created, failure = create_tasks(credential, target["id"], to_create, provenance(args.note))
-    log_activity(list_name, created, failure[0] if failure else None)
+    log_activity(list_name, created, failure)
     print(f"Created {len(created)} of {len(to_create)}.")
     if failure is None:
         return 0
-    title, exc = failure
-    print(f"Failed on {title!r}: {exc}")
-    print("  It may still have been created if the request timed out; check To Do before rerunning.")
-    not_created = to_create[len(created):]
-    print("Not created:")
-    for t in not_created:
-        print(f"  - {t}")
+    # A task that failed on a step was created, so "not created" starts after it.
+    skip_failed = 1 if failure.step is not None else 0
+    report_failure(failure, to_create[len(created) + skip_failed:])
     return 1
 
 
@@ -256,7 +355,8 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--lists", action="store_true", help="Print list names and exit")
     mode.add_argument("--test-auth", action="store_true", help="One-time interactive sign-in")
     parser.add_argument("titles", nargs="*", help="Task titles")
-    parser.add_argument("--file", help="File with one title per line (blank lines ignored)")
+    parser.add_argument("--file", help="File with one task per line; indented lines are steps of "
+                                       "the task above (blank lines ignored)")
     parser.add_argument("--note", help="Extra line for each task's body")
     parser.add_argument("--yes", action="store_true", help="Actually create the tasks")
     args = parser.parse_args(argv)

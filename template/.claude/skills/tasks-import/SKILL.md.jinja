@@ -1,6 +1,6 @@
 ---
 name: tasks-import
-description: Sync tasks from your task manager ({{ task_provider if enable_tasks else 'configured provider' }}) into a local SQLite database for cross-source queries, plus create-only task capture into Microsoft To Do (add_tasks.py, previewed first). Not for managing tasks — it never updates, completes or deletes them.
+description: Sync tasks from your task manager ({{ task_provider if enable_tasks else 'configured provider' }}) into a local SQLite database for cross-source queries, plus create-only task capture into Microsoft To Do, with optional steps (add_tasks.py, previewed first). Not for managing tasks — it never updates, completes or deletes them.
 ---
 
 # Tasks Import
@@ -83,24 +83,33 @@ Requires Full Disk Access for Terminal.app on recent macOS.
 
 ## Writing tasks (Microsoft To Do)
 
-`add_tasks.py` adds new tasks to an existing To Do list, for example the follow-ups at the end of a session. It is create-only: it cannot update, complete or delete a task, and never creates, renames or deletes a list. No reminders, due dates or recurrence.
+`add_tasks.py` adds new tasks to an existing To Do list, for example the follow-ups at the end of a session, optionally with steps (To Do's checklist items). It is create-only: it cannot update, complete or delete a task, add steps to a task that already exists, or create, rename or delete a list. No reminders, due dates or recurrence.
 
 ```bash
 cd .claude/skills/tasks-import
 uv run add_tasks.py --lists                                  # list names (read-only)
 uv run add_tasks.py --list Social "Text Viktor" "Suggest a coffee time to Lepka"   # preview
-uv run add_tasks.py --list Social --file tasks.txt           # one title per line, blank lines ignored
+uv run add_tasks.py --list Social --file tasks.txt           # one task per line, indented lines are its steps
 uv run add_tasks.py --list Social --file tasks.txt --yes     # actually create them
 uv run add_tasks.py --list Social --file tasks.txt --note "[[2026-11-16 briefing]]" --yes  # link back
 ```
 
-- **Preview is the default.** Without `--yes` it prints the list, each title and what it would skip, and writes nothing. Show {{ owner_name }} the preview and create only after they agree.
+Steps go in the `--file`. Each unindented line is a task; each indented line (spaces or tabs) under it is one of its steps. Positional titles have no steps. An indented line before the file's first task is an error.
+
+```text
+Pack for the talk
+    Laptop charger
+    HDMI adapter
+Text Viktor
+```
+
+- **Preview is the default.** Without `--yes` it prints the list, each title with its steps and what it would skip, and writes nothing. Show {{ owner_name }} the preview and create only after they agree.
 - `--list` matches the display name, ignoring case. No match or more than one match → non-zero exit with the available names.
-- Titles that match an open task in the list (trimmed, ignoring case), and repeats within the batch, are skipped.
+- Titles that match an open task in the list (trimmed, ignoring case), and repeats within the batch, are skipped, together with their steps.
 - Each task's body records `Added by Claude (pki vault), YYYY-MM-DD`, plus the `--note` text.
-- Limits: titles of 1–255 characters without control characters, at most 50 per run.
-- On the first failed request it stops and reports what was and wasn't created. It doesn't retry (except throttling with `Retry-After`), so rerun only after checking To Do; already-created titles are skipped on a rerun.
-- A real run appends an entry to the monthly activity log, `logs/activity/YYYY-MM.md`, through `append_activity()`. Titles and the list name are escaped there; the raw title goes only to To Do.
+- Limits: titles and steps of 1–255 characters without control characters; at most 50 tasks, 20 steps per task and 100 steps per run.
+- On the first failed request it stops and reports what was and wasn't created. It doesn't retry (except throttling with `Retry-After`), so rerun only after checking To Do; already-created titles are skipped on a rerun. If a step fails, its task already exists, so a rerun skips that task and its missing steps: add them in To Do, or delete the task and rerun.
+- A real run appends an entry to the monthly activity log, `logs/activity/YYYY-MM.md`, through `append_activity()`. Titles, steps and the list name are escaped there; the raw text goes only to To Do.
 
 ### One-time sign-in
 
