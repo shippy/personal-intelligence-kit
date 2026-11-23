@@ -10,7 +10,7 @@ Scans sent email for commitment phrases, checks for follow-through, and
 optionally cross-references with notes vault.
 
 Usage:
-    uv run commitment_accountability.py
+    uv run .claude/skills/cross-source-queries/commitment_accountability.py
 """
 
 import json

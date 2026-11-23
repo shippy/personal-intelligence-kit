@@ -10,8 +10,8 @@ Dispatches to the configured provider and writes normalized tasks to
 data/tasks.db. Provider is read from vault.toml → sources.tasks.provider.
 
 Usage:
-    uv run import_tasks.py
-    uv run import_tasks.py --full
+    uv run .claude/skills/tasks-import/import_tasks.py
+    uv run .claude/skills/tasks-import/import_tasks.py --full
 """
 
 from __future__ import annotations
@@ -327,7 +327,7 @@ def import_microsoft_todo(full: bool) -> int:
     """Import tasks from Microsoft To-Do via the Graph API.
 
     Uses device-code flow authentication (no app registration required).
-    Run `uv run import_tasks.py --test-auth` to verify auth before first sync.
+    Run `uv run .claude/skills/tasks-import/import_tasks.py --test-auth` to verify auth before first sync.
     """
     import time
 

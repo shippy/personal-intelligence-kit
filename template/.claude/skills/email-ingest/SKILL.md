@@ -10,8 +10,7 @@ Pulls mail from IMAP servers via `mbsync` and indexes it with `notmuch`.
 ## Invocation
 
 ```bash
-cd .claude/skills/email-ingest
-uv run ingest.py
+uv run .claude/skills/email-ingest/ingest.py
 ```
 
 Or called automatically by `data-sync`.

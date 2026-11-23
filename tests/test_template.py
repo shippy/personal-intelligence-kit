@@ -91,7 +91,14 @@ def test_single_dir_settings(single):
     assert f"Edit(/{single}/.claude/hooks/**)" in settings["deny"]
     assert not any("(./" in rule for rule in settings["deny"])
     assert not {"Bash(python3:*)", "Bash(cat:*)", "Bash(find:*)"} & set(settings["allow"])
-    assert "Bash(uv run:*)" in settings["allow"]
+    assert "Bash(uv run:*)" not in settings["allow"]
+    assert "Bash(uv run .claude/skills/data-sync/sync_all.py:*)" in settings["allow"]
+    assert not any(s in rule for rule in settings["allow"]
+                   for s in ("add_tasks.py", "fal_image.py", "intention_reality_gaps.py", "generate_report.py"))
+    for rule in settings["allow"]:
+        if rule.startswith("Bash(uv run "):
+            path = rule.removeprefix("Bash(uv run ").removesuffix(":*)")
+            assert (single / path).is_file(), rule
     assert "additionalDirectories" not in settings
     assert not (single / ".claude" / "settings.local.json").exists()  # host_web=allow
     assert json.loads((single / ".mcp.json").read_text()) == {"mcpServers": {}}
@@ -226,3 +233,15 @@ def test_output_root_rejects_equivalent_spellings(tmp_path):
     for bad in ("./output", "./", "output/", "out/.", "out[1]", "a/./b"):
         with pytest.raises(subprocess.CalledProcessError):
             render(tmp_path / bad.replace("/", "_").replace(".", "d"), output_root=bad)
+
+
+def test_uv_run_allow_follows_enabled_sources(tmp_path):
+    vault = render(tmp_path / "v", enable_email=False, enable_browser=False, enable_journal=False,
+                   enable_tasks=False, enable_git=False, enable_scheduled_tasks=False)
+    allow = json.loads((vault / ".claude" / "settings.json").read_text())["permissions"]["allow"]
+    uv_rules = [rule for rule in allow if rule.startswith("Bash(uv run ")]
+    assert "Bash(uv run .claude/skills/data-sync/sync_all.py:*)" in uv_rules
+    assert not any(s in rule for rule in uv_rules
+                   for s in ("email-", "browser-ingest", "session-analyzer", "journal-ingest", "tasks-import", "git-stats"))
+    for rule in uv_rules:
+        assert (vault / rule.removeprefix("Bash(uv run ").removesuffix(":*)")).is_file(), rule

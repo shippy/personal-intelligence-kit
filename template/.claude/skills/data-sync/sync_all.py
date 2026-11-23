@@ -10,9 +10,9 @@ Runs all sync workers for enabled sources in parallel. Reads vault.toml to
 determine which workers to instantiate.
 
 Usage:
-    uv run sync_all.py
-    uv run sync_all.py --yes
-    uv run sync_all.py --skip email --skip browser
+    uv run .claude/skills/data-sync/sync_all.py
+    uv run .claude/skills/data-sync/sync_all.py --yes
+    uv run .claude/skills/data-sync/sync_all.py --skip email --skip browser
 """
 
 from __future__ import annotations

@@ -338,5 +338,6 @@ Detailed workflows live in `.claude/skills/*/SKILL.md`. Each skill is loaded on-
 - Analysis skills read from those databases — they're decoupled from how data was ingested
 - LLM-powered skills use `pydantic-ai`: weekly-reflection requires `OPENAI_API_KEY`; stale-drafts optionally uses `ANTHROPIC_API_KEY` and falls back to heuristic ranking
 - Store secrets in the 1Password `Development` vault; `.env` contains `op://Development/<item>/credential` references
+- Call skill scripts from the vault root by repo-relative path: `uv run .claude/skills/<skill>/<script>.py`, not `cd` into the skill. The read and sync scripts are pre-allowed in that form; any other `uv run` (ad-hoc Python, scripts that write to an outside service or cost money) goes through the permission check
 - Run credential-dependent skills with `op run --env-file=.env -- uv run <script>`; use `--project .claude/skills/<skill>` for skills with a `pyproject.toml`
 - Resolve secrets per call only: there is no dotenv `.envrc`, and `.env` is never exported into the shell. Skills that need no secret (e.g. `data-sync`{% if enable_tasks and task_provider == 'todoist' %} without Todoist{% endif %}) run with plain `uv run`

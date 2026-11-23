@@ -15,7 +15,7 @@ all weekly reflections, and supplementary signals (task/email/notes counts)
 to an LLM. Falls back to regex keyword heuristics when no API key is set.
 
 Usage:
-    uv run intention_reality_gaps.py
+    uv run .claude/skills/cross-source-queries/intention_reality_gaps.py
 """
 
 import os

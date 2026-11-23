@@ -12,11 +12,10 @@ Query your notmuch-indexed email archive. Used by other skills or directly.
 Direct use via `notmuch` CLI is fastest, but this skill provides helpful wrappers:
 
 ```bash
-cd .claude/skills/email-analyzer
-uv run query.py "date:7d.. tag:sent"           # Last week's sent mail
-uv run query.py --recent 20                    # 20 most recent messages
-uv run query.py --from "alice@example.com"     # From a specific sender
-uv run query.py --stats                         # Volume stats
+uv run .claude/skills/email-analyzer/query.py "date:7d.. tag:sent"        # Last week's sent mail
+uv run .claude/skills/email-analyzer/query.py --recent 20                 # 20 most recent messages
+uv run .claude/skills/email-analyzer/query.py --from "alice@example.com"  # From a specific sender
+uv run .claude/skills/email-analyzer/query.py --stats                     # Volume stats
 ```
 
 ## What It Does
@@ -29,7 +28,7 @@ Wraps `notmuch search` and `notmuch show` with conveniences:
 ## Example: Human Messages Only
 
 ```bash
-uv run query.py --human date:7d..
+uv run .claude/skills/email-analyzer/query.py --human date:7d..
 ```
 
 Filters:

@@ -12,11 +12,10 @@ The intention-reality analysis uses an **LLM (Claude Sonnet or GPT) for semantic
 ## Invocation
 
 ```bash
-cd .claude/skills/cross-source-queries
-uv run generate_report.py                 # Run all three analyses
-uv run intention_reality_gaps.py          # Just intention-reality
-uv run commitment_accountability.py       # Just commitments
-uv run serendipity_convergence.py         # Just convergence
+uv run .claude/skills/cross-source-queries/generate_report.py            # Run all three analyses
+uv run .claude/skills/cross-source-queries/intention_reality_gaps.py     # Just intention-reality
+uv run .claude/skills/cross-source-queries/commitment_accountability.py  # Just commitments
+uv run .claude/skills/cross-source-queries/serendipity_convergence.py    # Just convergence
 ```
 
 Or via Claude Code: `batch: cross-source-queries`

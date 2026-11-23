@@ -19,11 +19,11 @@ one of that task's steps:
     Text Viktor
 
 Usage:
-    uv run add_tasks.py --list Social "Text Viktor" "Suggest a coffee time"
-    uv run add_tasks.py --list Social --file tasks.txt        # tasks, indented steps
-    uv run add_tasks.py --list Social --file tasks.txt --yes  # actually create them
-    uv run add_tasks.py --test-auth                           # one-time interactive sign-in
-    uv run add_tasks.py --lists                               # print list names (read-only)
+    uv run .claude/skills/tasks-import/add_tasks.py --list Social "Text Viktor" "Suggest a coffee time"
+    uv run .claude/skills/tasks-import/add_tasks.py --list Social --file tasks.txt        # tasks, indented steps
+    uv run .claude/skills/tasks-import/add_tasks.py --list Social --file tasks.txt --yes  # actually create them
+    uv run .claude/skills/tasks-import/add_tasks.py --test-auth                           # one-time interactive sign-in
+    uv run .claude/skills/tasks-import/add_tasks.py --lists                               # print list names (read-only)
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ MAX_BATCH = 50
 MAX_STEPS = 20          # per task
 MAX_STEPS_TOTAL = 100   # per run
 MAX_ID = 1024           # a Graph task id we're willing to put in a URL
-AUTH_HINT = "run `uv run add_tasks.py --test-auth` first"
+AUTH_HINT = "run `uv run .claude/skills/tasks-import/add_tasks.py --test-auth` first"
 OPEN_FILTER = "$filter=" + quote("status ne 'completed'", safe="'")
 
 

@@ -10,9 +10,9 @@ Copies the live browser History SQLite file to a clean snapshot in
 data/browser-history.db, filtering out noise.
 
 Usage:
-    uv run ingest.py              # Last 30 days
-    uv run ingest.py --days 90
-    uv run ingest.py --all
+    uv run .claude/skills/browser-ingest/ingest.py              # Last 30 days
+    uv run .claude/skills/browser-ingest/ingest.py --days 90
+    uv run .claude/skills/browser-ingest/ingest.py --all
 """
 
 from __future__ import annotations

@@ -18,9 +18,8 @@ Journal type is configured in `vault.toml` → `sources.journal.type`. Current v
 ## Invocation
 
 ```bash
-cd .claude/skills/journal-ingest
-uv run ingest.py             # Import all new entries
-uv run ingest.py --rebuild   # Drop + rebuild the DB
+uv run .claude/skills/journal-ingest/ingest.py            # Import all new entries
+uv run .claude/skills/journal-ingest/ingest.py --rebuild  # Drop + rebuild the DB
 ```
 
 ## What It Does
@@ -69,7 +68,7 @@ CREATE VIRTUAL TABLE entries_fts USING fts5(body, content='entries', content_row
 
 1. Export from Rosebud (Settings → "Export to markdown") → saves to `~/Downloads/`
 2. Move the export to `{{ journal_path }}/`
-3. Run `uv run ingest.py`
+3. Run `uv run .claude/skills/journal-ingest/ingest.py`
 
 Rosebud web export: https://my.rosebud.app → Settings → Export to markdown
 {% elif enable_journal and journal_type == 'dayone' -%}
@@ -77,14 +76,14 @@ Rosebud web export: https://my.rosebud.app → Settings → Export to markdown
 
 1. In Day One: File → Export → JSON
 2. Save the resulting `.zip` and unpack into `{{ journal_path }}/`
-3. Run `uv run ingest.py`
+3. Run `uv run .claude/skills/journal-ingest/ingest.py`
 {% elif enable_journal and journal_type == 'markdown' -%}
 ### Plain Markdown
 
 Point `{{ journal_path }}` at a directory where each file is named `YYYY-MM-DD.md` (or has an ISO date in the filename). Then:
 
 ```bash
-uv run ingest.py
+uv run .claude/skills/journal-ingest/ingest.py
 ```
 {% else -%}
 Configure `sources.journal.type` in `vault.toml` to one of: `rosebud`, `dayone`, `markdown`.
