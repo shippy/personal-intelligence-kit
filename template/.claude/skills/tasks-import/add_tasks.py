@@ -31,9 +31,9 @@ from __future__ import annotations
 import argparse
 import sys
 import unicodedata
-from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -56,14 +56,12 @@ class UsageError(Exception):
     pass
 
 
-@dataclass
-class Task:
+class Task(NamedTuple):
     title: str
-    steps: list[str] = field(default_factory=list)
+    steps: tuple[str, ...] = ()
 
 
-@dataclass
-class Failure:
+class Failure(NamedTuple):
     """Where a run stopped. `step` is None when the task itself wasn't created."""
     task: Task
     error: Exception
@@ -162,7 +160,7 @@ def validate_tasks(tasks: list[Task]) -> list[Task]:
     for title, task in zip(titles, tasks):
         if len(task.steps) > MAX_STEPS:
             raise UsageError(f"Too many steps under {title!r}: {len(task.steps)} (max {MAX_STEPS})")
-        cleaned.append(Task(title, [_check_text(s, "Step") for s in task.steps]))
+        cleaned.append(Task(title, tuple(_check_text(s, "Step") for s in task.steps)))
     return cleaned
 
 
@@ -258,7 +256,7 @@ def read_tasks(args) -> list[Task]:
     """Positional titles, then the file's tasks; an indented file line is a step of the task above."""
     tasks = [Task(t) for t in args.titles]
     if args.file:
-        from_file: list[Task] = []
+        from_file: list[tuple[str, list[str]]] = []
         text = Path(args.file).read_text(encoding="utf-8")
         for n, line in enumerate(text.splitlines(), 1):
             if not line.strip():
@@ -266,10 +264,10 @@ def read_tasks(args) -> list[Task]:
             if line[0].isspace():
                 if not from_file:
                     raise UsageError(f"Line {n} of {args.file} is indented (a step) but no task comes before it")
-                from_file[-1].steps.append(line)
+                from_file[-1][1].append(line)
             else:
-                from_file.append(Task(line))
-        tasks += from_file
+                from_file.append((line, []))
+        tasks += [Task(title, tuple(steps)) for title, steps in from_file]
     return tasks
 
 

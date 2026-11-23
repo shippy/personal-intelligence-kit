@@ -488,7 +488,7 @@ def test_step_limits(graph, tmp_path, capsys, text, message):
 
 
 def test_step_limits_allow_20_per_task_and_100_per_run():
-    tasks = [add.Task(f"T{t}", [f"s{i}" for i in range(20)]) for t in range(5)]
+    tasks = [add.Task(f"T{t}", tuple(f"s{i}" for i in range(20))) for t in range(5)]
     assert sum(len(t.steps) for t in add.validate_tasks(tasks)) == 100
 
 
