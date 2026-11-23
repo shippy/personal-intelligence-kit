@@ -67,6 +67,7 @@ class Failure(NamedTuple):
     error: Exception
     step: str | None = None
     steps_added: int = 0
+    step_sent: bool = True   # False: stopped before sending the step (no usable task id)
 
 
 class NotSignedIn(Exception):
@@ -99,11 +100,12 @@ def connect():
 
 # Bidi marks, embeddings, overrides and isolates: they reorder how text is displayed.
 _BIDI_CONTROLS = set("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+_LINE_SEPARATORS = {"\u2028", "\u2029"}  # categories Zl/Zp: they break lines like a newline
 
 
 def _unsafe_char(c: str) -> bool:
-    """C0/C1 controls and DEL (category Cc), or a bidi control."""
-    return unicodedata.category(c) == "Cc" or c in _BIDI_CONTROLS
+    """C0/C1 controls and DEL (category Cc), a bidi control, or a Unicode line separator."""
+    return unicodedata.category(c) == "Cc" or c in _BIDI_CONTROLS or c in _LINE_SEPARATORS
 
 
 def display(text: str) -> str:
@@ -132,14 +134,18 @@ def _key(title: str) -> str:
 
 
 def _check_text(text: str, label: str) -> str:
-    """Stripped `text`, or UsageError if it is empty, too long or unsafe."""
+    """Stripped `text`, or UsageError if it is empty, too long or unsafe.
+
+    Only spaces and tabs around the text are allowed; any other control character
+    is refused wherever it is, so stripping can't hide one.
+    """
+    if any(_unsafe_char(c) for c in text.strip(" \t")):
+        raise UsageError(f"{label} contains a control or bidi character: {display(text.strip()[:40])!r}")
     t = text.strip()
     if not t:
         raise UsageError(f"{label} must not be empty")
     if len(t) > MAX_TITLE:
         raise UsageError(f"{label} longer than {MAX_TITLE} characters: {display(t[:40])!r}...")
-    if any(_unsafe_char(c) for c in t):
-        raise UsageError(f"{label} contains a control or bidi character: {display(t[:40])!r}")
     return t
 
 
@@ -208,8 +214,9 @@ def create_tasks(credential, list_id: str, tasks: list[Task], body: str):
             return created, Failure(t, exc)
         if t.steps:
             task_id = response.get("id") if isinstance(response, dict) else None
-            if not isinstance(task_id, str) or not task_id:
-                return created, Failure(t, RuntimeError("Graph returned no task id"), t.steps[0])
+            if not isinstance(task_id, str) or task_id in ("", ".", ".."):
+                return created, Failure(t, RuntimeError("Graph returned no usable task id"),
+                                        t.steps[0], step_sent=False)
             steps_endpoint = f"{endpoint}/{quote(task_id, safe='')}/checklistItems"
             for i, step in enumerate(t.steps):
                 try:
@@ -258,10 +265,13 @@ def read_tasks(args) -> list[Task]:
     if args.file:
         from_file: list[tuple[str, list[str]]] = []
         text = Path(args.file).read_text(encoding="utf-8")
-        for n, line in enumerate(text.splitlines(), 1):
-            if not line.strip():
+        # Split on LF (and CRLF) only: str.splitlines() would also split on VT, FF,
+        # NEL, U+2028 and other controls, which validation must see and refuse.
+        for n, line in enumerate(text.split("\n"), 1):
+            line = line.removesuffix("\r")
+            if not line.strip(" \t"):  # blank; a line of other controls becomes a task and is refused
                 continue
-            if line[0].isspace():
+            if line[0] in " \t":
                 if not from_file:
                     raise UsageError(f"Line {n} of {args.file} is indented (a step) but no task comes before it")
                 from_file[-1][1].append(line)
@@ -293,7 +303,8 @@ def report_failure(failure: Failure, not_created: list[Task]) -> None:
     else:
         print(f"{task.title!r} was created, but only {failure.steps_added} of {len(task.steps)} "
               f"steps were added. Failed on step {failure.step!r}: {failure.error}")
-        print("  That step may still have been added if the request timed out.")
+        if failure.step_sent:
+            print("  That step may still have been added if the request timed out.")
         print("  A rerun skips this task because it is now open: add the missing steps in To Do,")
         print("  or delete the task there and rerun.")
         print("Steps not added:")
@@ -329,13 +340,16 @@ def run(args) -> int:
         return 0
 
     created, failure = create_tasks(credential, target["id"], to_create, provenance(args.note))
-    log_activity(list_name, created, failure)
-    print(f"Created {len(created)} of {len(to_create)}.")
+    try:
+        log_activity(list_name, created, failure)
+    except Exception as exc:  # the To Do outcome below matters more than the log
+        print(f"Warning: the activity log entry was not written: {exc}")
+    # A task that failed on a step was created, so it counts, and "not created" starts after it.
+    partial = 1 if failure is not None and failure.step is not None else 0
+    print(f"Created {len(created) + partial} of {len(to_create)}.")
     if failure is None:
         return 0
-    # A task that failed on a step was created, so "not created" starts after it.
-    skip_failed = 1 if failure.step is not None else 0
-    report_failure(failure, to_create[len(created) + skip_failed:])
+    report_failure(failure, to_create[len(created) + partial:])
     return 1
 
 

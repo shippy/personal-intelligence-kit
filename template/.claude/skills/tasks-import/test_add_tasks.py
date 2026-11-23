@@ -430,7 +430,7 @@ def test_task_id_is_quoted_in_step_url(graph, monkeypatch, tmp_path):
     assert graph.posts[1][0] == "/me/todo/lists/soc/tasks/a%2Fb%3Fc%3D/checklistItems"
 
 
-@pytest.mark.parametrize("response", [{}, {"id": ""}, {"id": 5}, None])
+@pytest.mark.parametrize("response", [{}, {"id": ""}, {"id": 5}, None, {"id": "."}, {"id": ".."}])
 def test_missing_task_id_stops_before_steps(graph, monkeypatch, tmp_path, capsys, response):
     monkeypatch.setattr(todo, "_ms_graph_post", lambda c, e, p, *, scope: (
         graph.posts.append((e, p)) or response))
@@ -438,7 +438,8 @@ def test_missing_task_id_stops_before_steps(graph, monkeypatch, tmp_path, capsys
     assert add.main(["--list", "Social", "--file", f, "--yes"]) == 1
     assert task_posts(graph) == ["T"] and step_posts(graph) == []
     out = capsys.readouterr().out
-    assert "only 0 of 1 steps" in out and "no task id" in out
+    assert "only 0 of 1 steps" in out and "no usable task id" in out
+    assert "may still have been added" not in out  # no step request was sent
     assert out.split("Not created:")[1].split() == ["-", "U"]
 
 
@@ -455,7 +456,7 @@ def test_failed_step_stops_the_run_and_reports_partial_task(graph, vault, tmp_pa
     assert task_posts(graph) == ["Done", "Partial"]
     assert [s for _, s in step_posts(graph)] == ["S0", "S1"]
     out = capsys.readouterr().out
-    assert "Created 1 of 3" in out
+    assert "Created 2 of 3" in out
     assert "'Partial' was created, but only 1 of 3 steps were added" in out
     assert "Failed on step 'S2'" in out and "A rerun skips this task" in out
     assert out.split("Steps not added:")[1].split("Not created:")[0].split() == ["-", "S2", "-", "S3"]
@@ -470,7 +471,7 @@ def test_failed_step_on_last_task_has_no_not_created_section(graph, tmp_path, ca
     f = write(tmp_path, "Only\n  S1\n")
     assert add.main(["--list", "Social", "--file", f, "--yes"]) == 1
     out = capsys.readouterr().out
-    assert "Created 0 of 1" in out and "Not created:" not in out
+    assert "Created 1 of 1" in out and "Not created:" not in out
 
 
 @pytest.mark.parametrize("text, message", [
@@ -498,3 +499,48 @@ def test_step_text_is_inert_in_the_log(graph, vault, tmp_path):
     assert add.main(["--list", "Social", "--file", f, "--yes"]) == 1
     log = log_text(vault)
     assert "![x](" not in log and "\\!\\[x\\]\\(" in log
+
+
+@pytest.mark.parametrize("text", [
+    "Task\n  Safe\u0085Injected task\n",   # NEL: splitlines() would make it a new task
+    "Task\n  Safe\x0bInjected\n",          # VT
+    "Task\x0cInjected\n",                   # FF
+    "Task\n  Safe\u2028Injected\n",        # LINE SEPARATOR
+    "Task\u2029Injected\n",                 # PARAGRAPH SEPARATOR
+    "Task\x1f\n",                           # trailing control that strip() would remove
+    "\x1fTask\n",                           # leading one
+    "Task\n  Step\x1c\n",                  # FILE SEPARATOR at the end of a step
+    "Task\n\x0b\n",                        # a line of nothing but a control
+    "Task\rInjected\n",                     # a lone CR is not a line break
+])
+def test_controls_in_file_are_refused_not_treated_as_line_breaks(graph, tmp_path, capsys, text):
+    f = write(tmp_path, text)
+    assert add.main(["--list", "Social", "--file", f, "--yes"]) == 2
+    assert "control or bidi character" in capsys.readouterr().out
+    assert graph.posts == [] and graph.gets == []
+
+
+def test_crlf_files_and_blank_lines_still_work(graph, tmp_path):
+    f = tmp_path / "tasks.txt"
+    f.write_bytes(b"Task\r\n  Step\r\n\r\n \t \r\nOther\r\n")
+    assert add.main(["--list", "Social", "--file", str(f), "--yes"]) == 0
+    assert task_posts(graph) == ["Task", "Other"]
+    assert [s for _, s in step_posts(graph)] == ["Step"]
+
+
+@pytest.mark.parametrize("title", ["x\x1f", "\x1fx", "x\u2028y"])
+def test_positional_titles_cannot_hide_controls_at_the_edges(graph, capsys, title):
+    assert add.main(["--list", "Social", title, "--yes"]) == 2
+    assert graph.posts == []
+
+
+def test_failed_log_write_still_reports_the_outcome(graph, monkeypatch, tmp_path, capsys):
+    def broken(*args):
+        raise OSError("disk full")
+    monkeypatch.setattr(add, "append_activity", broken)
+    graph.fail_on = "S2"
+    f = write(tmp_path, "T\n  S1\n  S2\n")
+    assert add.main(["--list", "Social", "--file", f, "--yes"]) == 1
+    out = capsys.readouterr().out
+    assert "activity log entry was not written: disk full" in out
+    assert "Steps not added:" in out and "- S2" in out

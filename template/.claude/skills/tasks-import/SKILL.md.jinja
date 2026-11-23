@@ -94,7 +94,7 @@ uv run add_tasks.py --list Social --file tasks.txt --yes     # actually create t
 uv run add_tasks.py --list Social --file tasks.txt --note "[[2026-11-16 briefing]]" --yes  # link back
 ```
 
-Steps go in the `--file`. Each unindented line is a task; each indented line (spaces or tabs) under it is one of its steps. Positional titles have no steps. An indented line before the file's first task is an error.
+Steps go in the `--file`. Lines end at LF or CRLF. Each unindented line is a task; each line indented with spaces or tabs under it is one of its steps. Positional titles have no steps. An indented line before the file's first task is an error.
 
 ```text
 Pack for the talk
@@ -107,7 +107,7 @@ Text Viktor
 - `--list` matches the display name, ignoring case. No match or more than one match → non-zero exit with the available names.
 - Titles that match an open task in the list (trimmed, ignoring case), and repeats within the batch, are skipped, together with their steps.
 - Each task's body records `Added by Claude (pki vault), YYYY-MM-DD`, plus the `--note` text.
-- Limits: titles and steps of 1–255 characters without control characters; at most 50 tasks, 20 steps per task and 100 steps per run.
+- Limits: titles and steps of 1–255 characters, with no control, bidi or line-separator characters (spaces and tabs around them are trimmed); at most 50 tasks, 20 steps per task and 100 steps per run.
 - On the first failed request it stops and reports what was and wasn't created. It doesn't retry (except throttling with `Retry-After`), so rerun only after checking To Do; already-created titles are skipped on a rerun. If a step fails, its task already exists, so a rerun skips that task and its missing steps: add them in To Do, or delete the task and rerun.
 - A real run appends an entry to the monthly activity log, `logs/activity/YYYY-MM.md`, through `append_activity()`. Titles, steps and the list name are escaped there; the raw text goes only to To Do.
 
