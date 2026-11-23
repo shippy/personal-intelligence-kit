@@ -264,7 +264,8 @@ def read_tasks(args) -> list[Task]:
     tasks = [Task(t) for t in args.titles]
     if args.file:
         from_file: list[tuple[str, list[str]]] = []
-        text = Path(args.file).read_text(encoding="utf-8")
+        # Bytes, not read_text(): universal-newline mode would turn a lone CR into a line break.
+        text = Path(args.file).read_bytes().decode("utf-8")
         # Split on LF (and CRLF) only: str.splitlines() would also split on VT, FF,
         # NEL, U+2028 and other controls, which validation must see and refuse.
         for n, line in enumerate(text.split("\n"), 1):
