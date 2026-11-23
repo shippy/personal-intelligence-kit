@@ -48,6 +48,7 @@ MAX_TITLE = 255
 MAX_BATCH = 50
 MAX_STEPS = 20          # per task
 MAX_STEPS_TOTAL = 100   # per run
+MAX_ID = 1024           # a Graph task id we're willing to put in a URL
 AUTH_HINT = "run `uv run add_tasks.py --test-auth` first"
 OPEN_FILTER = "$filter=" + quote("status ne 'completed'", safe="'")
 
@@ -214,7 +215,8 @@ def create_tasks(credential, list_id: str, tasks: list[Task], body: str):
             return created, Failure(t, exc)
         if t.steps:
             task_id = response.get("id") if isinstance(response, dict) else None
-            if not isinstance(task_id, str) or task_id in ("", ".", ".."):
+            if (not isinstance(task_id, str) or task_id in ("", ".", "..")
+                    or not task_id.isascii() or len(task_id) > MAX_ID):
                 return created, Failure(t, RuntimeError("Graph returned no usable task id"),
                                         t.steps[0], step_sent=False)
             steps_endpoint = f"{endpoint}/{quote(task_id, safe='')}/checklistItems"
@@ -245,8 +247,15 @@ def _with_steps(task: Task) -> str:
 def _failure_text(failure: Failure) -> str:
     if failure.step is None:
         return md_text(failure.task.title)
+    if not failure.step_sent:
+        return f"{md_text(failure.task.title)} (task created; no usable task id from Graph, so no steps added)"
     return (f"{md_text(failure.task.title)} (task created with {failure.steps_added} of "
             f"{len(failure.task.steps)} steps; failed on step {md_text(failure.step)})")
+
+
+def tasks_created(created: list[Task], failure: Failure | None) -> int:
+    """Tasks that now exist in To Do: the complete ones plus one that failed on a step."""
+    return len(created) + (1 if failure is not None and failure.step is not None else 0)
 
 
 def log_activity(list_name: str, created: list[Task], failure: Failure | None) -> None:
@@ -256,7 +265,7 @@ def log_activity(list_name: str, created: list[Task], failure: Failure | None) -
         "Created": [_with_steps(t) for t in created],
         "Stopped at failure": _failure_text(failure) if failure is not None else None,
     }
-    append_activity(f"Tasks added to Microsoft To Do ({len(created)})", fields)
+    append_activity(f"Tasks added to Microsoft To Do ({tasks_created(created, failure)})", fields)
 
 
 def read_tasks(args) -> list[Task]:
@@ -268,13 +277,13 @@ def read_tasks(args) -> list[Task]:
         text = Path(args.file).read_bytes().decode("utf-8")
         # Split on LF (and CRLF) only: str.splitlines() would also split on VT, FF,
         # NEL, U+2028 and other controls, which validation must see and refuse.
-        for n, line in enumerate(text.split("\n"), 1):
-            line = line.removesuffix("\r")
+        for n, line in enumerate(text.replace("\r\n", "\n").split("\n"), 1):
             if not line.strip(" \t"):  # blank; a line of other controls becomes a task and is refused
                 continue
             if line[0] in " \t":
                 if not from_file:
-                    raise UsageError(f"Line {n} of {args.file} is indented (a step) but no task comes before it")
+                    raise UsageError(f"Line {n} of {display(str(args.file))!r} is indented (a step) "
+                                     "but no task comes before it")
                 from_file[-1][1].append(line)
             else:
                 from_file.append((line, []))
@@ -346,11 +355,11 @@ def run(args) -> int:
     except Exception as exc:  # the To Do outcome below matters more than the log
         print(f"Warning: the activity log entry was not written: {exc}")
     # A task that failed on a step was created, so it counts, and "not created" starts after it.
-    partial = 1 if failure is not None and failure.step is not None else 0
-    print(f"Created {len(created) + partial} of {len(to_create)}.")
+    n_created = tasks_created(created, failure)
+    print(f"Created {n_created} of {len(to_create)}.")
     if failure is None:
         return 0
-    report_failure(failure, to_create[len(created) + partial:])
+    report_failure(failure, to_create[n_created:])
     return 1
 
 

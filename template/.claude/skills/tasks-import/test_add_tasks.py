@@ -430,7 +430,8 @@ def test_task_id_is_quoted_in_step_url(graph, monkeypatch, tmp_path):
     assert graph.posts[1][0] == "/me/todo/lists/soc/tasks/a%2Fb%3Fc%3D/checklistItems"
 
 
-@pytest.mark.parametrize("response", [{}, {"id": ""}, {"id": 5}, None, {"id": "."}, {"id": ".."}])
+@pytest.mark.parametrize("response", [{}, {"id": ""}, {"id": 5}, None, {"id": "."}, {"id": ".."},
+                                      {"id": "\ud800"}, {"id": "é"}, {"id": "A" * 1025}])
 def test_missing_task_id_stops_before_steps(graph, monkeypatch, tmp_path, capsys, response):
     monkeypatch.setattr(todo, "_ms_graph_post", lambda c, e, p, *, scope: (
         graph.posts.append((e, p)) or response))
@@ -464,6 +465,7 @@ def test_failed_step_stops_the_run_and_reports_partial_task(graph, vault, tmp_pa
     log = log_text(vault)
     assert "- Done (1 step)\n" in log
     assert "**Stopped at failure:** Partial (task created with 1 of 3 steps; failed on step S2)\n" in log
+    assert "**Action:** Tasks added to Microsoft To Do (2)\n" in log
 
 
 def test_failed_step_on_last_task_has_no_not_created_section(graph, tmp_path, capsys):
@@ -512,6 +514,8 @@ def test_step_text_is_inert_in_the_log(graph, vault, tmp_path):
     "Task\n  Step\x1c\n",                  # FILE SEPARATOR at the end of a step
     "Task\n\x0b\n",                        # a line of nothing but a control
     "Task\rInjected\n",                     # a lone CR is not a line break
+    "Task\r",                                # nor at the end of the file
+    "Task\n  Step\r",
 ])
 def test_controls_in_file_are_refused_not_treated_as_line_breaks(graph, tmp_path, capsys, text):
     f = write(tmp_path, text)
@@ -544,3 +548,27 @@ def test_failed_log_write_still_reports_the_outcome(graph, monkeypatch, tmp_path
     out = capsys.readouterr().out
     assert "activity log entry was not written: disk full" in out
     assert "Steps not added:" in out and "- S2" in out
+
+
+def test_long_ascii_task_id_is_accepted(graph, monkeypatch, tmp_path):
+    monkeypatch.setattr(todo, "_ms_graph_post", lambda c, e, p, *, scope: (
+        graph.posts.append((e, p)) or {"id": "A" * 1024}))
+    f = write(tmp_path, "T\n  S\n")
+    assert add.main(["--list", "Social", "--file", f, "--yes"]) == 0
+
+
+def test_missing_task_id_is_logged_as_such(graph, vault, monkeypatch, tmp_path):
+    monkeypatch.setattr(todo, "_ms_graph_post", lambda c, e, p, *, scope: graph.posts.append((e, p)) or {})
+    f = write(tmp_path, "T\n  S\n")
+    assert add.main(["--list", "Social", "--file", f, "--yes"]) == 1
+    log = log_text(vault)
+    assert "**Action:** Tasks added to Microsoft To Do (1)\n" in log
+    assert "T (task created; no usable task id from Graph, so no steps added)" in log
+
+
+def test_hostile_filename_is_shown_safely(graph, tmp_path, capsys):
+    f = tmp_path / "evil\x1b]0;pwned\x07\u202e.txt"
+    f.write_text("  orphan step\n")
+    assert add.main(["--list", "Social", "--file", str(f), "--yes"]) == 2
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "\u202e" not in out and "\x07" not in out
