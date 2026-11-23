@@ -14,6 +14,8 @@ brew install isync notmuch
 apt install isync notmuch
 ```
 
+The config below needs **isync 1.5 or later** (`mbsync --version`): it uses `TLSType` and `--pull-old`, which 1.4 doesn't know. Homebrew ships 1.5; older Debian/Ubuntu releases may still package 1.4.
+
 ## 2. Generate an app-specific password (Gmail)
 
 Normal Gmail passwords don't work with IMAP. Generate an app password:
@@ -69,13 +71,20 @@ Channel gmail
 Far :gmail-remote:
 Near :gmail-local:
 Patterns "INBOX" "[Gmail]/Sent Mail" "[Gmail]/All Mail"
-Create Both
-Expunge Both
+# Read-only mirror: changes flow from the server to the local archive only; nothing local
+# (deletions, flags, new folders) is ever written back. Messages deleted on the server stay
+# in the archive, flagged as trashed (Expunge None).
+Sync Pull
+Create Near
+Remove None
+Expunge None
 SyncState *
-
-# IMPORTANT: Limit initial sync to the most recent 1000 messages.
-# Remove or increase this once you're comfortable.
+# Keep roughly the 1000 latest-arriving messages per mailbox for the initial sync (approximate:
+# selection is by arrival order, and flagged messages are always kept). No blank line above:
+# an empty line ends the Channel section. ExpireUnread yes keeps a mostly-unread mailbox from
+# aborting with "Please set ExpireUnread". To fetch older mail later, see below.
 MaxMessages 1000
+ExpireUnread yes
 ```
 
 Replace `YOUR_EMAIL@gmail.com` with your address throughout.
@@ -87,7 +96,7 @@ mkdir -p {{ email_path }}
 mbsync -a
 ```
 
-This downloads the most recent 1000 messages to `{{ email_path }}`. It may take several minutes.
+This downloads about 1000 messages per mailbox (by arrival order, plus any flagged ones) to `{{ email_path }}`. It may take several minutes.
 
 ## 6. Initialize notmuch
 
@@ -129,5 +138,7 @@ Running `data-sync` (or this skill directly) will re-run `mbsync -a && notmuch n
 Once you're comfortable and want full history, edit `~/.mbsyncrc` and comment out:
 ```ini
 # MaxMessages 1000
+# ExpireUnread yes
 ```
-Then re-run `mbsync -a`. The next sync will pull older mail.
+Then fetch the older mail once with `mbsync --pull-old -a`. A plain `mbsync -a` won't: messages skipped by
+`MaxMessages` are only fetched by the explicit `Old` operation, which `Sync Pull` doesn't include.

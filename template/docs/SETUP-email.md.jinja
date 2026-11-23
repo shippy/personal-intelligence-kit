@@ -21,6 +21,8 @@ brew install isync notmuch   # macOS
 apt install isync notmuch    # Debian/Ubuntu
 ```
 
+The config below needs **isync 1.5 or later** (`mbsync --version`): it uses `TLSType` and `--pull-old`, which 1.4 doesn't know. Homebrew ships 1.5; older Debian/Ubuntu releases may still package 1.4.
+
 ## Credential Storage
 
 Pick one:
@@ -60,17 +62,27 @@ Channel gmail
 Far :gmail-remote:
 Near :gmail-local:
 Patterns "INBOX" "[Gmail]/Sent Mail" "[Gmail]/All Mail"
-Create Both
-Expunge Both
+# Read-only mirror: changes flow from the server to the local archive only; nothing local
+# (deletions, flags, new folders) is ever written back. Messages deleted on the server stay
+# in the archive, flagged as trashed (Expunge None).
+Sync Pull
+Create Near
+Remove None
+Expunge None
 SyncState *
-MaxMessages 1000   # <-- limit initial sync; remove later
+# Keep roughly the 1000 latest-arriving messages per mailbox for the initial sync (approximate:
+# selection is by arrival order, and flagged messages are always kept). No blank line above:
+# an empty line ends the Channel section. ExpireUnread yes keeps a mostly-unread mailbox from
+# aborting with "Please set ExpireUnread". To fetch older mail later, see below.
+MaxMessages 1000
+ExpireUnread yes
 ```
 
 ## First Sync
 
 ```bash
 mkdir -p {{ email_path }}
-mbsync -a            # pulls ~1000 recent messages
+mbsync -a            # pulls about 1000 messages per mailbox
 notmuch setup        # interactive: name, email, database path = {{ email_path }}
 notmuch new          # index downloaded messages
 ```
@@ -95,7 +107,9 @@ uv run .claude/skills/data-sync/sync_all.py --yes
 
 ## Removing MaxMessages
 
-Once you're comfortable, edit `~/.mbsyncrc` and comment out the `MaxMessages` line. The next sync will pull older mail.
+Once you're comfortable, edit `~/.mbsyncrc` and comment out the `MaxMessages` and `ExpireUnread` lines, then
+fetch the older mail once with `mbsync --pull-old -a`. A plain sync won't: messages skipped by `MaxMessages` are only
+fetched by the explicit `Old` operation, which `Sync Pull` doesn't include.
 
 ## Common Issues
 
